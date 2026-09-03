@@ -1,0 +1,8 @@
+import Link from 'next/link';
+import { AppShell } from '@/components/app-shell';
+import { Badge } from '@/components/ui/badge';
+import { jobStatusLabels } from '@/lib/product-types';
+import { requirePageUser } from '@/lib/server/auth';
+import { listJobs } from '@/lib/server/data';
+export const dynamic = 'force-dynamic';
+export default async function JobsPage() { const user = await requirePageUser('/jobs'); const jobs = await listJobs(user.userId); return <AppShell title="岗位" eyebrow="JOB WORKSPACE"><div className="pb-20 lg:pb-0">{jobs.length ? <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{jobs.map((job) => <Link key={job.id} href={`/jobs/${job.id}`} className="rounded-2xl border bg-white p-5 transition hover:border-primary/30 hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{job.company}</p><p className="mt-1 text-sm text-slate-700">{job.role}</p></div><Badge variant="outline">{jobStatusLabels[job.status as keyof typeof jobStatusLabels]}</Badge></div><p className="mt-4 line-clamp-3 text-sm leading-6 text-muted-foreground">{job.jd}</p><div className="mt-4 flex gap-3 text-xs text-muted-foreground"><span>{job.location || '地点未填写'}</span><span>{job.deadline || '截止时间未填写'}</span></div></Link>)}</div> : <div className="rounded-2xl border border-dashed bg-white p-12 text-center"><p className="font-medium">还没有岗位</p><p className="mt-2 text-sm text-muted-foreground">创建岗位并粘贴 JD，开始定向优化。</p><Link href="/jobs/new" className="mt-5 inline-block rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white">新建岗位</Link></div>}</div></AppShell>; }
