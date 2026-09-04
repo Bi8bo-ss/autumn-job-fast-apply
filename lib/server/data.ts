@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
 import type { Profile, ResumeContent } from '@/lib/product-types';
 import { emptyProfile, profileSchema } from '@/lib/product-types';
+import { parseResumeText, resumeContentToText } from '@/lib/resume-parser';
 
 export type JobRecord = {
   id: string;
@@ -123,29 +124,11 @@ export async function getResumeVersion(userId: string, versionId: string) {
 }
 
 export function contentFromText(text: string, language: 'zh' | 'en'): ResumeContent {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  return {
-    language,
-    headline: lines[0] || (language === 'zh' ? '个人简历' : 'Resume'),
-    summary: '',
-    education: [],
-    experiences: [],
-    projects: [],
-    skills: [],
-    extras: lines.slice(1),
-  };
+  return parseResumeText(text, language);
 }
 
 export function textFromContent(content: ResumeContent) {
-  return [
-    content.headline,
-    content.summary,
-    ...content.education,
-    ...content.experiences.flatMap((entry) => [entry.heading, entry.meta, ...entry.bullets]),
-    ...content.projects.flatMap((entry) => [entry.heading, entry.meta, ...entry.bullets]),
-    ...content.skills,
-    ...content.extras,
-  ].filter(Boolean).join('\n');
+  return resumeContentToText(content);
 }
 
 export async function getJobWorkspace(userId: string, jobId: string) {
