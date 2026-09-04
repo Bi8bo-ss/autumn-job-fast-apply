@@ -7,6 +7,11 @@ import type {
   Profile,
   ResumeContent,
 } from '@/lib/product-types';
+import {
+  resumeContainsText,
+  type ResumeSuggestionOperation,
+  type ResumeSuggestionSection,
+} from '@/lib/resume-suggestions';
 import { getRuntimeEnv } from './runtime';
 
 const jobAnalysisSchema = z.object({
@@ -22,7 +27,8 @@ const jobAnalysisSchema = z.object({
 const tuneOutputSchema = z.object({
   suggestions: z.array(
     z.object({
-      sectionKey: z.string(),
+      operation: z.enum(['replace', 'append']),
+      sectionKey: z.enum(['summary', 'experience', 'project', 'skills', 'extras']),
       originalText: z.string(),
       proposedText: z.string(),
       rationale: z.string(),
@@ -74,6 +80,7 @@ const JSON_SCHEMAS = {
           type: 'object',
           additionalProperties: false,
           required: [
+            'operation',
             'sectionKey',
             'originalText',
             'proposedText',
@@ -82,7 +89,11 @@ const JSON_SCHEMAS = {
             'needsUserInput',
           ],
           properties: {
-            sectionKey: { type: 'string' },
+            operation: { type: 'string', enum: ['replace', 'append'] },
+            sectionKey: {
+              type: 'string',
+              enum: ['summary', 'experience', 'project', 'skills', 'extras'],
+            },
             originalText: { type: 'string' },
             proposedText: { type: 'string' },
             rationale: { type: 'string' },
@@ -205,26 +216,63 @@ export async function analyzeJobWithAi({
 export async function tuneResumeWithAi({
   jd,
   content,
+  profile,
   settings,
 }: {
   jd: string;
   content: ResumeContent;
+  profile: Profile;
   settings: AiSettings;
 }) {
-  return requestStructured(
+  const result = await requestStructured(
     'resume_tuning',
     JSON_SCHEMAS.tune,
     tuneOutputSchema,
     [
-      '你是校园招聘简历编辑。',
-      '只做微调：突出已有事实、调整顺序、改善动词与关键词，不得新增或夸大事实。',
-      '每条建议都必须精确引用一段原文；若需要数字或事实而输入中没有，保持原文并将 needsUserInput 设为 true。',
-      'sectionKey 使用 summary、experience、project、skills 或 extras。',
+      '你是校园招聘简历定向编辑。目标是让简历明显向岗位靠拢，不限于同义词微调，但所有事实必须可靠。',
+      '允许重组已有要点、合并冗余、前置岗位关键词，并在已有事实支持下强化任务—行动—结果链路。',
+      '如果 JD 明确强调某个行业或方向，可以在 skills 或 extras 新增一条简短的“行业关注 / 求职方向 / 学习关注”定位语。例如“行业关注：新能源汽车、智能出行与用户运营”。这种话只能表达关注或求职意向，不能写成“熟悉、精通、有经验、负责过”。',
+      '如果候选人事实库明确提供了证据，才可以新增更具体的技能或行业陈述。JD 中的要求本身绝不是候选人事实。',
+      '禁止编造或夸大经历、职责、项目、技能、数字和成果；没有证据的“熟悉、精通、具备经验、负责过”等表述必须 needsUserInput=true，并明确提示用户补充。',
+      'operation=replace 时，originalText 必须逐字引用结构化简历中一段完整的现有文本；可用于 summary、experience、project、skills、extras。',
+      'operation=append 时，只能使用 skills 或 extras，originalText 必须为空字符串，proposedText 是要新增的一整行；最多给 2 条 append 建议，并优先保持单页篇幅。',
+      '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
+      '新增内容要克制：优先通过改写和合并腾出篇幅，总新增不超过两条短句。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
     ].join('\n'),
-    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}`,
+    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【候选人已确认事实（不含联系方式）】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}`,
     settings,
   );
+
+  let appendCount = 0;
+  const seen = new Set<string>();
+  const confirmedFacts = JSON.stringify(tuningProfileFacts(profile));
+  const suggestions = result.suggestions.filter((suggestion) => {
+    const operation = suggestion.operation as ResumeSuggestionOperation;
+    const section = suggestion.sectionKey as ResumeSuggestionSection;
+    suggestion.proposedText = suggestion.proposedText.trim();
+    if (!suggestion.proposedText || /\[(?:邮箱|手机号|证件号|敏感字段)已隐藏\]/.test(suggestion.proposedText)) return false;
+    if (operation === 'append') {
+      suggestion.originalText = '';
+      if (section !== 'skills' && section !== 'extras') return false;
+      if (/(?:熟悉|精通|具备.+经验|负责过|主导过|掌握|proficient|experienced in|led\b)/i.test(suggestion.proposedText)
+        && !confirmedFacts.includes(suggestion.proposedText)) {
+        suggestion.needsUserInput = true;
+      }
+    } else if (!suggestion.originalText || !resumeContainsText(content, suggestion.originalText)) {
+      return false;
+    }
+    const key = `${operation}:${section}:${suggestion.originalText}:${suggestion.proposedText}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    if (operation === 'append') {
+      appendCount += 1;
+      if (appendCount > 2) return false;
+    }
+    return true;
+  });
+
+  return { suggestions: suggestions.slice(0, settings.suggestionLimit) };
 }
 
 export async function generateMotivationWithAi({
@@ -284,4 +332,19 @@ export async function generateCustomAnswerWithAi({
 function profileFacts(profile: Profile) {
   const { aiSettings: _aiSettings, ...facts } = profile;
   return facts;
+}
+
+function tuningProfileFacts(profile: Profile) {
+  return {
+    education: profile.education,
+    experiences: profile.experiences,
+    projects: profile.projects,
+    skills: profile.skills,
+    certificates: profile.certificates,
+    awards: profile.awards,
+    languages: profile.languages,
+    summaries: profile.summaries,
+    preferences: profile.preferences,
+    customFields: profile.customFields,
+  };
 }
