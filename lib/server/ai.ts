@@ -40,7 +40,8 @@ const tuneOutputSchema = z.object({
   ),
 });
 
-const motivationSchema = z.object({
+const applicationNarrativesSchema = z.object({
+  selfIntroduction: z.string(),
   motivation: z.string(),
 });
 
@@ -106,11 +107,14 @@ const JSON_SCHEMAS = {
       },
     },
   },
-  motivation: {
+  applicationNarratives: {
     type: 'object',
     additionalProperties: false,
-    required: ['motivation'],
-    properties: { motivation: { type: 'string' } },
+    required: ['selfIntroduction', 'motivation'],
+    properties: {
+      selfIntroduction: { type: 'string' },
+      motivation: { type: 'string' },
+    },
   },
   customAnswer: {
     type: 'object',
@@ -285,26 +289,30 @@ export async function tuneResumeWithAi({
   return { suggestions: suggestions.slice(0, settings.suggestionLimit) };
 }
 
-export async function generateMotivationWithAi({
+export async function generateApplicationNarrativesWithAi({
   profile,
+  resume,
   jd,
   language,
 }: {
   profile: Profile;
+  resume: ResumeContent | null;
   jd: string;
   language: 'zh' | 'en';
 }) {
   return requestStructured(
-    'application_motivation',
-    JSON_SCHEMAS.motivation,
-    motivationSchema,
+    'application_narratives',
+    JSON_SCHEMAS.applicationNarratives,
+    applicationNarrativesSchema,
     [
-      '根据候选人事实和岗位描述撰写 180 至 260 字的求职动机。',
+      '根据候选人已确认事实、简历和岗位描述，同时生成个人自我介绍与求职动机。',
+      'selfIntroduction 使用第一人称，适合官网填写或 60 秒口头介绍；中文 180 至 280 字，英文 110 至 170 词。依次覆盖教育/方向、最匹配经历、核心能力、岗位连接，避免逐条复述简历。',
+      'motivation 中文 150 至 240 字，英文 100 至 160 词；重点说明已有经历与岗位任务的连接，避免空泛赞美。',
       '不得补充输入之外的公司事实、个人经历或成绩。',
-      '避免空泛赞美，重点说明已有经历与岗位任务的连接。',
+      '不得输出邮箱、手机号、地址、证件号等联系方式；证据不足时使用克制表述，不得猜测。',
       `输出语言：${language === 'zh' ? '中文' : '英文'}。`,
     ].join('\n'),
-    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人事实】\n${sanitizeForAi(JSON.stringify(profileFacts(profile)))}`,
+    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人已确认事实】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}\n\n【当前简历】\n${sanitizeForAi(JSON.stringify(resume))}`,
     profile.aiSettings,
   );
 }
