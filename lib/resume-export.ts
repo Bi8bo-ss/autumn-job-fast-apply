@@ -43,12 +43,21 @@ function splitLead(value: string) {
 function groupEducation(lines: string[]) {
   const groups: Array<{ heading: string; meta: string; details: string[] }> = [];
   for (const line of lines) {
-    if (/^(?:19|20)\d{2}/.test(line) && groups.length && !groups.at(-1)!.meta) {
-      groups.at(-1)!.meta = line;
+    const date = line.match(/(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?\s*(?:--?|–|—|至|~)\s*(?:(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?|至今|present|now)/i);
+    if (date && date.index !== undefined) {
+      const before = line.slice(0, date.index).replace(/[|｜,，·\s]+$/, '').trim();
+      const after = line.slice(date.index + date[0].length).replace(/^[|｜,，:：;；·\s]+/, '').trim();
+      const meta = date[0].replace(/\s*(?:--?|–|—|至|~)\s*/, ' - ');
+      if (!before && groups.length && !groups.at(-1)!.meta) {
+        groups.at(-1)!.meta = meta;
+        if (after) groups.at(-1)!.details.push(after);
+      } else {
+        groups.push({ heading: before || line, meta, details: after ? [after] : [] });
+      }
     } else if (/^(?:主修|课程|Relevant Coursework)/i.test(line) && groups.length) {
       groups.at(-1)!.details.push(line);
     } else {
-      groups.push({ heading: line, meta: '', details: [] });
+      groups.push({ heading: line.replace(/[|｜]\s*$/, '').trim(), meta: '', details: [] });
     }
   }
   return groups;
@@ -150,6 +159,7 @@ export function buildResumeTex(content: ResumeContent) {
   const projects = content.projects.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
   const entries = simpleEntries(content.summary).map((value) => `\\SimpleEntry{${tex(value)}}`).join('\n');
   return `% 此文件用于你现有的 resume.cls Overleaf 模板工程。
+% 编译器请选择 XeLaTeX。
 % 请保留 resume.cls、zh_CN-Adobefonts_external.sty、linespacing_fix.sty。
 % 照片路径由模板约定为 images/you.jpg。
 \\documentclass{resume}
@@ -158,6 +168,7 @@ export function buildResumeTex(content: ResumeContent) {
 \\usepackage{linespacing_fix}
 \\usepackage{cite}
 \\usepackage{hyperref}
+\\usepackage{adjustbox}
 
 \\hypersetup{
   colorlinks=true,
@@ -166,8 +177,37 @@ export function buildResumeTex(content: ResumeContent) {
   urlcolor=black
 }
 
+%==================== 一页紧凑排版 ====================
+% 保留 resume.cls 的整体风格，只收紧字号、标题和列表间距。
+\\newcommand{\\ResumeBodyFont}{\\fontsize{8.5pt}{9.8pt}\\selectfont}
+\\newcommand{\\ResumeSubheadFont}{\\fontsize{9pt}{10.2pt}\\selectfont}
+\\titleformat{\\section}
+  {\\fontsize{11pt}{12pt}\\selectfont\\bfseries\\raggedright}
+  {}{0em}{}[\\titlerule]
+\\titlespacing*{\\section}{0pt}{0.45em}{0.18em}
+\\titleformat{\\subsection}
+  {\\ResumeSubheadFont\\bfseries\\raggedright}
+  {}{0em}{}
+\\titlespacing*{\\subsection}{0pt}{0.28em}{0.04em}
+\\setlist[itemize]{nosep,leftmargin=1.25pc,labelsep=0.35em}
+\\renewcommand{\\sepspace}{\\vspace*{0.3em}}
+\\renewcommand{\\MyName}[1]{%
+  \\noindent\\fontsize{18pt}{19pt}\\selectfont\\usefont{OT1}{phv}{m}{n}#1\\hfill\\par
+  \\ResumeBodyFont\\normalfont}
+\\renewcommand{\\SimpleEntry}[1]{%
+  \\noindent\\ResumeBodyFont\\hangindent=0.5cm\\hangafter=0 #1\\par}
+\\renewcommand{\\Content}[1]{%
+  \\begingroup\\ResumeBodyFont
+  \\begin{itemize}[nosep,topsep=0.08em,leftmargin=1.25pc,labelsep=0.35em]
+  #1
+  \\end{itemize}\\endgroup}
+
 \\begin{document}
 \\pagenumbering{gobble}
+\\ResumeBodyFont
+% max totalheight 只在内容超过一页时等比缩小，内容较短时不会放大。
+\\begin{adjustbox}{max width=\\textwidth,max totalheight=0.975\\textheight,center}
+\\begin{minipage}{\\textwidth}
 
 %==================== 个人信息 ====================
 \\MyName{${tex(content.headline)}}
@@ -186,7 +226,8 @@ ${texSection(section.skills, texContent(content.skills))}
 
 ${texSection(section.extras, texContent(content.extras))}
 
-\\sepspace
+\\end{minipage}
+\\end{adjustbox}
 \\end{document}
 `;
 }

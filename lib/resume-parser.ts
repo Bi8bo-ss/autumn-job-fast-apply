@@ -15,6 +15,7 @@ const SECTION_LABELS: Array<{ section: Section; labels: string[] }> = [
 const ALL_LABELS = SECTION_LABELS.flatMap((item) => item.labels).sort((a, b) => b.length - a.length);
 const INLINE_SECTION_RE = new RegExp(`(?:^|[\\s|｜])(${ALL_LABELS.map(escapeRegExp).join('|')})(?=[：:\\s|｜]|$)`, 'gi');
 const DATE_RE = /(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?/;
+const DATE_RANGE_RE = /(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?\s*(?:--?|–|—|至|~)\s*(?:(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?|至今|present|now)/i;
 const CONTACT_RE = /(?:@|(?:\+?86[-\s]?)?1\d{10}|电话|手机|邮箱|email|tel\.?|linkedin|github|地址)/i;
 
 function escapeRegExp(value: string) {
@@ -30,7 +31,17 @@ function sectionFor(line: string): Section | null {
 }
 
 function cleanLine(value: string) {
-  return value.replace(/^[•●▪◦·*✓✔➢►▶◆◇■□\-–—]+\s*/, '').replace(/\s+/g, ' ').trim();
+  return value
+    .replace(/^[•●▪◦·*✓✔➢►▶◆◇■□\-–—]+\s*/, '')
+    .replace(/^[：:]\s*/, '')
+    .replace(/\s+([，。；：、！？）】])/g, '$1')
+    .replace(/([（【])\s+/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function cleanBodyLine(value: string) {
+  return cleanLine(value).replace(/([\u3400-\u9fff]) (?=[\u3400-\u9fff])/g, '$1');
 }
 
 function prepareLines(text: string) {
@@ -40,6 +51,10 @@ function prepareLines(text: string) {
     .replace(/\r/g, '\n')
     .replace(INLINE_SECTION_RE, (_match, label: string) => `\n${label}\n`)
     .replace(/\s*[•●▪◦✓✔➢►▶◆◇■□]\s*/g, '\n• ')
+    // PDF text extraction often converts list bullets into spaced hyphens.
+    // Date ranges and words such as “平台-服务商” have no surrounding spaces,
+    // so this only restores real list boundaries.
+    .replace(/(?:[ \t]{2,}-[ \t]+|[ \t]+-[ \t]{2,})(?=[：:\p{L}\p{N}\u3400-\u9fff])/gu, '\n• ')
     .replace(/[\t\u00a0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n');
 
@@ -104,7 +119,7 @@ function parseEntries(lines: string[]): ResumeContent['experiences'] {
     if (DATE_RE.test(line) && !current.meta) {
       current.meta = line;
     } else if (wasBullet || line.length > 70 || /[。；;]$/.test(line)) {
-      current.bullets.push(line);
+      current.bullets.push(cleanBodyLine(line));
     } else if (current.bullets.length || current.meta) {
       push();
       current = { heading: line, meta: '', bullets: [] };
@@ -114,6 +129,31 @@ function parseEntries(lines: string[]): ResumeContent['experiences'] {
   }
   push();
   return entries;
+}
+
+function normalizeEntry(entry: ResumeContent['experiences'][number]) {
+  let heading = cleanLine(entry.heading).replace(/[|｜]\s*$/, '').trim();
+  const rawMeta = cleanLine(entry.meta);
+  const match = rawMeta.match(DATE_RANGE_RE);
+  let meta = rawMeta;
+  const recoveredBullets: string[] = [];
+
+  if (match && match.index !== undefined) {
+    const before = cleanLine(rawMeta.slice(0, match.index)).replace(/[|｜,，·\s]+$/, '');
+    const after = cleanLine(rawMeta.slice(match.index + match[0].length)).replace(/^[|｜,，:：;；·\s]+/, '');
+    meta = match[0].replace(/\s*(?:--?|–|—|至|~)\s*/, ' - ');
+    if (before && !heading.includes(before)) heading = `${heading}｜${before}`;
+    if (after) recoveredBullets.push(after);
+  } else if (rawMeta.length > 48) {
+    meta = '';
+    recoveredBullets.push(rawMeta);
+  }
+
+  return {
+    heading,
+    meta,
+    bullets: [...recoveredBullets, ...entry.bullets].map(cleanBodyLine).filter(Boolean),
+  };
 }
 
 export function parseResumeText(text: string, language: Language): ResumeContent {
@@ -172,9 +212,20 @@ export function resumeContentToText(content: ResumeContent) {
 
 export function normalizeResumeContent(content: ResumeContent, sourceText?: string): ResumeContent {
   const structuredCount = content.education.length + content.experiences.length + content.projects.length + content.skills.length;
-  const hasOversizedLine = [content.headline, content.summary, ...content.education, ...content.skills, ...content.extras]
+  const hasOversizedLine = [content.headline, content.summary, ...content.education, ...content.skills, ...content.extras,
+    ...content.experiences.flatMap((entry) => [entry.heading, entry.meta]),
+    ...content.projects.flatMap((entry) => [entry.heading, entry.meta])]
     .some((line) => line.length > 240);
   const degenerate = content.headline.length > 80 || hasOversizedLine || structuredCount === 0;
-  if (!degenerate) return content;
-  return parseResumeText(sourceText?.trim() || resumeContentToText(content), content.language);
+  const parsed = degenerate ? parseResumeText(sourceText?.trim() || resumeContentToText(content), content.language) : content;
+  return {
+    ...parsed,
+    headline: cleanLine(parsed.headline),
+    summary: cleanLine(parsed.summary),
+    education: parsed.education.map(cleanLine).filter(Boolean),
+    experiences: parsed.experiences.map(normalizeEntry),
+    projects: parsed.projects.map(normalizeEntry),
+    skills: parsed.skills.map(cleanBodyLine).filter(Boolean),
+    extras: parsed.extras.map(cleanBodyLine).filter(Boolean),
+  };
 }
