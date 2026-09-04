@@ -129,24 +129,27 @@ ${entry.details.map((detail) => `${texLine(detail)}\\par`).join('\n')}`).join('\
   const experiences = content.experiences.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
   const projects = content.projects.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
   const lines = (values: string[]) => values.map((value) => `${texLine(value)}\\par`).join('\n');
-  return `% Overleaf compiler: XeLaTeX
+  return `% Overleaf compiler: pdfLaTeX (the default compiler)
 % Optional photo: upload a file named resume-photo.jpg
-\\documentclass[UTF8,10pt,a4paper]{ctexart}
+\\documentclass[10pt,a4paper]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage{CJKutf8}
 \\usepackage[left=16mm,right=16mm,top=15mm,bottom=14mm]{geometry}
-\\usepackage{fontspec}
 \\usepackage{graphicx}
 \\usepackage{wrapfig}
 \\usepackage{adjustbox}
 \\usepackage{tabularx}
 \\usepackage{array}
 \\usepackage{enumitem}
-\\setmainfont{TeX Gyre Heros}
-\\setCJKmainfont{FandolHei-Regular}[BoldFont=FandolHei-Bold]
+\\usepackage[scaled=0.95]{helvet}
+\\renewcommand{\\familydefault}{\\sfdefault}
 \\pagestyle{empty}
 \\setlength{\\parindent}{0pt}
 \\setlength{\\parskip}{0pt}
 \\setlength{\\textfloatsep}{0pt}
 \\setlength{\\intextsep}{0pt}
+\\setlength{\\emergencystretch}{2em}
+\\sloppy
 \\newcommand{\\ressection}[1]{%
   \\vspace{2.3mm}{\\fontsize{10.5pt}{12pt}\\selectfont\\bfseries #1}\\par
   \\vspace{-1.1mm}\\rule{\\linewidth}{0.45pt}\\vspace{0.5mm}}
@@ -156,6 +159,7 @@ ${entry.details.map((detail) => `${texLine(detail)}\\par`).join('\n')}`).join('\
   \\end{tabularx}\\vspace{-1.4mm}}
 \\setlist[itemize]{label=-,leftmargin=3.6mm,itemsep=0pt,topsep=0.2mm,parsep=0pt,partopsep=0pt}
 \\begin{document}
+\\begin{CJK*}{UTF8}{gbsn}
 \\begin{adjustbox}{max width=\\textwidth,max totalheight=0.98\\textheight,center}
 \\begin{minipage}{\\textwidth}
 \\IfFileExists{resume-photo.jpg}{%
@@ -176,6 +180,7 @@ ${texSection(section.skills, lines(content.skills))}
 ${texSection(section.extras, lines(content.extras))}
 \\end{minipage}
 \\end{adjustbox}
+\\end{CJK*}
 \\end{document}
 `;
 }
