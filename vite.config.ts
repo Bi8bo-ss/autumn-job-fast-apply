@@ -46,6 +46,12 @@ export default defineConfig(async () => {
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
+    resolve: {
+      dedupe: ['react', 'react-dom', 'react-server-dom-webpack'],
+    },
+    optimizeDeps: {
+      exclude: ['@base-ui/react', '@base-ui/utils', 'lucide-react'],
+    },
     server: isCodexSeatbeltSandbox
       ? { watch: { useFsEvents: false, usePolling: true } }
       : undefined,

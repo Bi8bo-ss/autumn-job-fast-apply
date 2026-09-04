@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import {
   BriefcaseBusiness,
   FileText,
@@ -29,15 +28,15 @@ export function AppShell({
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1500px]">
         <aside className="hidden w-64 shrink-0 border-r border-sidebar-border bg-sidebar px-4 py-5 lg:flex lg:flex-col">
-          <Link href="/" className="flex items-center gap-3 px-2">
+          <a href="/" className="flex items-center gap-3 px-2">
             <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm"><Sparkles className="size-[18px]" /></span>
             <span><span className="block text-[15px] font-semibold">秋招速投</span><span className="block text-[11px] text-muted-foreground">个人投递工作台</span></span>
-          </Link>
+          </a>
           <nav className="mt-8 space-y-1" aria-label="主要导航">
             {nav.map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground">
+              <a key={href} href={href} className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground">
                 <Icon className="size-[17px]" />{label}
-              </Link>
+              </a>
             ))}
           </nav>
           <div className="mt-auto rounded-xl border bg-white/70 p-3 text-xs leading-5 text-muted-foreground">
@@ -51,13 +50,13 @@ export function AppShell({
               {eyebrow ? <p className="text-xs font-medium text-primary">{eyebrow}</p> : null}
               <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
             </div>
-            <Link href="/jobs/new" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:opacity-90">+ 新建岗位</Link>
+            <a href="/jobs/new" className="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm transition hover:opacity-90">+ 新建岗位</a>
           </header>
           <div className="p-5 sm:p-8">{children}</div>
         </section>
       </div>
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t bg-white/95 p-1 backdrop-blur lg:hidden" aria-label="移动端导航">
-        {nav.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className="flex flex-col items-center gap-1 rounded-lg py-2 text-[11px] text-muted-foreground"><Icon className="size-4" />{label}</Link>)}
+        {nav.map(({ href, label, icon: Icon }) => <a key={href} href={href} className="flex flex-col items-center gap-1 rounded-lg py-2 text-[11px] text-muted-foreground"><Icon className="size-4" />{label}</a>)}
       </nav>
     </main>
   );
