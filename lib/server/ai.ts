@@ -8,6 +8,8 @@ import type {
   ResumeContent,
 } from '@/lib/product-types';
 import {
+  canDeleteResumeText,
+  resumeContainsExactText,
   resumeContainsText,
   type ResumeSuggestionOperation,
   type ResumeSuggestionSection,
@@ -27,7 +29,7 @@ const jobAnalysisSchema = z.object({
 const tuneOutputSchema = z.object({
   suggestions: z.array(
     z.object({
-      operation: z.enum(['replace', 'append']),
+      operation: z.enum(['replace', 'append', 'delete']),
       sectionKey: z.enum(['summary', 'experience', 'project', 'skills', 'extras']),
       originalText: z.string(),
       proposedText: z.string(),
@@ -89,7 +91,7 @@ const JSON_SCHEMAS = {
             'needsUserInput',
           ],
           properties: {
-            operation: { type: 'string', enum: ['replace', 'append'] },
+            operation: { type: 'string', enum: ['replace', 'append', 'delete'] },
             sectionKey: {
               type: 'string',
               enum: ['summary', 'experience', 'project', 'skills', 'extras'],
@@ -236,6 +238,8 @@ export async function tuneResumeWithAi({
       '禁止编造或夸大经历、职责、项目、技能、数字和成果；没有证据的“熟悉、精通、具备经验、负责过”等表述必须 needsUserInput=true，并明确提示用户补充。',
       'operation=replace 时，originalText 必须逐字引用结构化简历中一段完整的现有文本；可用于 summary、experience、project、skills、extras。',
       'operation=append 时，只能使用 skills 或 extras，originalText 必须为空字符串，proposedText 是要新增的一整行；最多给 2 条 append 建议，并优先保持单页篇幅。',
+      'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
+      '允许用一条 replace 加一条 delete 完成合并：先把有效信息并入保留项，再删除重复项。不得因为 JD 没提某项就机械删除；只有删除后能明显提升岗位针对性或信息密度时才建议删除。',
       '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
       '新增内容要克制：优先通过改写和合并腾出篇幅，总新增不超过两条短句。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
@@ -251,7 +255,8 @@ export async function tuneResumeWithAi({
     const operation = suggestion.operation as ResumeSuggestionOperation;
     const section = suggestion.sectionKey as ResumeSuggestionSection;
     suggestion.proposedText = suggestion.proposedText.trim();
-    if (!suggestion.proposedText || /\[(?:邮箱|手机号|证件号|敏感字段)已隐藏\]/.test(suggestion.proposedText)) return false;
+    if (operation !== 'delete' && !suggestion.proposedText) return false;
+    if (/\[(?:邮箱|手机号|证件号|敏感字段)已隐藏\]/.test(suggestion.proposedText)) return false;
     if (operation === 'append') {
       suggestion.originalText = '';
       if (section !== 'skills' && section !== 'extras') return false;
@@ -259,6 +264,11 @@ export async function tuneResumeWithAi({
         && !confirmedFacts.includes(suggestion.proposedText)) {
         suggestion.needsUserInput = true;
       }
+    } else if (operation === 'delete') {
+      suggestion.proposedText = '';
+      if (!suggestion.originalText
+        || !resumeContainsExactText(content, suggestion.originalText)
+        || !canDeleteResumeText(content, section, suggestion.originalText)) return false;
     } else if (!suggestion.originalText || !resumeContainsText(content, suggestion.originalText)) {
       return false;
     }
