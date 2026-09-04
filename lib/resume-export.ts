@@ -108,79 +108,85 @@ function texLine(value: string) {
   return `${lead ? `\\textbf{${tex(lead)}} ` : ''}${tex(rest)}`;
 }
 
+function texContent(values: string[]) {
+  if (!values.length) return '';
+  return `\\Content{
+${values.map((value) => `  \\item{${texLine(value)}}`).join('\n')}
+}`;
+}
+
 function texEntry(heading: string, meta: string, bullets: string[]) {
-  const items = bullets.length ? `
-\\begin{itemize}
-${bullets.map((bullet) => `  \\item ${texLine(bullet)}`).join('\n')}
-\\end{itemize}` : '';
-  return `\\resumeentry{${tex(heading)}}{${tex(meta)}}${items}`;
+  return `\\datedsubsection{
+  \\textbf{${tex(heading)}}
+}{${tex(meta)}}${bullets.length ? `
+${texContent(bullets)}` : ''}`;
 }
 
 function texSection(title: string, body: string) {
-  return body ? `\\ressection{${tex(title)}}
+  return body ? `%==================== ${title} ====================
+\\section{${tex(title)}}
+
 ${body}` : '';
 }
 
+function simpleEntries(value: string) {
+  return value
+    .split(/\s*(?:\r?\n|[|｜])\s*/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 export function buildResumeTex(content: ResumeContent) {
-  const section = labels(content);
-  const contact = isContactLine(content.summary);
-  const education = groupEducation(content.education).map((entry) => `\\resumeentry{${tex(entry.heading)}}{${tex(entry.meta)}}
-${entry.details.map((detail) => `${texLine(detail)}\\par`).join('\n')}`).join('\n');
+  const zh = content.language === 'zh';
+  const section = {
+    education: zh ? '教育背景' : 'Education',
+    experiences: zh ? '实习经历' : 'Experience',
+    projects: zh ? '项目经历' : 'Projects',
+    skills: zh ? '专业技能' : 'Skills',
+    extras: zh ? '其他信息' : 'Additional Information',
+  };
+  const education = groupEducation(content.education).map((entry) => texEntry(entry.heading, entry.meta, entry.details)).join('\n\n');
   const experiences = content.experiences.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
   const projects = content.projects.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
-  const lines = (values: string[]) => values.map((value) => `${texLine(value)}\\par`).join('\n');
-  return `% Overleaf compiler: pdfLaTeX (the default compiler)
-% Optional photo: upload a file named resume-photo.jpg
-\\documentclass[10pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage{CJKutf8}
-\\usepackage[left=16mm,right=16mm,top=15mm,bottom=14mm]{geometry}
-\\usepackage{graphicx}
-\\usepackage{wrapfig}
-\\usepackage{adjustbox}
-\\usepackage{tabularx}
-\\usepackage{array}
-\\usepackage{enumitem}
-\\usepackage[scaled=0.95]{helvet}
-\\renewcommand{\\familydefault}{\\sfdefault}
-\\pagestyle{empty}
-\\setlength{\\parindent}{0pt}
-\\setlength{\\parskip}{0pt}
-\\setlength{\\textfloatsep}{0pt}
-\\setlength{\\intextsep}{0pt}
-\\setlength{\\emergencystretch}{2em}
-\\sloppy
-\\newcommand{\\ressection}[1]{%
-  \\vspace{2.3mm}{\\fontsize{10.5pt}{12pt}\\selectfont\\bfseries #1}\\par
-  \\vspace{-1.1mm}\\rule{\\linewidth}{0.45pt}\\vspace{0.5mm}}
-\\newcommand{\\resumeentry}[2]{%
-  \\begin{tabularx}{\\linewidth}{@{}>{\\fontsize{9.2pt}{11pt}\\selectfont\\bfseries}X>{\\raggedleft\\arraybackslash\\fontsize{7.5pt}{9pt}\\selectfont\\bfseries}l@{}}
-  #1 & #2
-  \\end{tabularx}\\vspace{-1.4mm}}
-\\setlist[itemize]{label=-,leftmargin=3.6mm,itemsep=0pt,topsep=0.2mm,parsep=0pt,partopsep=0pt}
+  const entries = simpleEntries(content.summary).map((value) => `\\SimpleEntry{${tex(value)}}`).join('\n');
+  return `% 此文件用于你现有的 resume.cls Overleaf 模板工程。
+% 请保留 resume.cls、zh_CN-Adobefonts_external.sty、linespacing_fix.sty。
+% 照片路径由模板约定为 images/you.jpg。
+\\documentclass{resume}
+
+\\usepackage{zh_CN-Adobefonts_external}
+\\usepackage{linespacing_fix}
+\\usepackage{cite}
+\\usepackage{hyperref}
+
+\\hypersetup{
+  colorlinks=true,
+  linkcolor=black,
+  filecolor=black,
+  urlcolor=black
+}
+
 \\begin{document}
-\\begin{CJK*}{UTF8}{gbsn}
-\\begin{adjustbox}{max width=\\textwidth,max totalheight=0.98\\textheight,center}
-\\begin{minipage}{\\textwidth}
-\\IfFileExists{resume-photo.jpg}{%
-  \\begin{wrapfigure}{r}{20mm}
-    \\vspace{-4mm}\\centering
-    \\includegraphics[width=20mm,height=30mm]{resume-photo.jpg}
-    \\vspace{-5mm}
-  \\end{wrapfigure}}{}
-{\\fontsize{20pt}{22pt}\\selectfont\\bfseries ${tex(content.headline)}}\\par
-\\vspace{1.2mm}
-${contact ? `{\\fontsize{8.6pt}{10.5pt}\\selectfont ${tex(content.summary)}}\\par` : ''}
-\\fontsize{8.6pt}{12pt}\\selectfont
-${!contact && content.summary ? texSection(section.summary, `${tex(content.summary)}\\par`) : ''}
+\\pagenumbering{gobble}
+
+%==================== 个人信息 ====================
+\\MyName{${tex(content.headline)}}
+\\sepspace
+${entries}
+
+\\yourphoto{0.14}
+
 ${texSection(section.education, education)}
+
 ${texSection(section.experiences, experiences)}
+
 ${texSection(section.projects, projects)}
-${texSection(section.skills, lines(content.skills))}
-${texSection(section.extras, lines(content.extras))}
-\\end{minipage}
-\\end{adjustbox}
-\\end{CJK*}
+
+${texSection(section.skills, texContent(content.skills))}
+
+${texSection(section.extras, texContent(content.extras))}
+
+\\sepspace
 \\end{document}
 `;
 }

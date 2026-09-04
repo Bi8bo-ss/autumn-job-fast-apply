@@ -36,5 +36,5 @@ export function OverleafCopyButton({ versionId, large = false, className }: { ve
     }
   }
   const label = state === 'loading' ? '正在生成…' : state === 'copied' ? '已复制源码' : state === 'error' ? '复制失败' : '复制 Overleaf';
-  return <Button type="button" variant="outline" size={large ? 'lg' : 'sm'} className={cn(className)} onClick={copy} disabled={state === 'loading'} title="复制可直接粘贴到 Overleaf main.tex 的完整源码">{state === 'copied' ? <Check /> : <Clipboard />}{label}</Button>;
+  return <Button type="button" variant="outline" size={large ? 'lg' : 'sm'} className={cn(className)} onClick={copy} disabled={state === 'loading'} title="复制适配 resume.cls 模板的 main.tex 源码">{state === 'copied' ? <Check /> : <Clipboard />}{label}</Button>;
 }
