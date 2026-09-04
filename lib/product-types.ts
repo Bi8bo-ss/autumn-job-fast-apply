@@ -18,6 +18,22 @@ export const jobStatusLabels: Record<(typeof jobStatuses)[number], string> = {
   closed: '结束',
 };
 
+export const aiSettingsSchema = z.object({
+  reasoningEffort: z.enum(['low', 'medium']).default('low'),
+  writingStyle: z.enum(['concise', 'balanced', 'detailed']).default('balanced'),
+  suggestionLimit: z.union([z.literal(6), z.literal(10), z.literal(12)]).default(10),
+  outputLanguage: z.enum(['auto', 'zh', 'en']).default('auto'),
+});
+
+export type AiSettings = z.infer<typeof aiSettingsSchema>;
+
+export const emptyAiSettings: AiSettings = {
+  reasoningEffort: 'low',
+  writingStyle: 'balanced',
+  suggestionLimit: 10,
+  outputLanguage: 'auto',
+};
+
 const datedEntry = z.object({
   id: z.string(),
   title: z.string(),
@@ -72,6 +88,7 @@ export const profileSchema = z.object({
       value: z.string(),
     }),
   ),
+  aiSettings: aiSettingsSchema.default(emptyAiSettings),
 });
 
 export type Profile = z.infer<typeof profileSchema>;
@@ -101,6 +118,7 @@ export const emptyProfile: Profile = {
     expectedSalary: '',
   },
   customFields: [],
+  aiSettings: emptyAiSettings,
 };
 
 export const resumeContentSchema = z.object({

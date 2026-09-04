@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import type { Profile, ResumeContent } from '@/lib/product-types';
-import { emptyProfile } from '@/lib/product-types';
+import { emptyProfile, profileSchema } from '@/lib/product-types';
 
 export type JobRecord = {
   id: string;
@@ -47,7 +47,8 @@ export async function getProfile(userId: string): Promise<Profile> {
     .first<{ content_json: string }>();
   if (!row) return emptyProfile;
   try {
-    return JSON.parse(row.content_json) as Profile;
+    const parsed = profileSchema.safeParse(JSON.parse(row.content_json));
+    return parsed.success ? parsed.data : emptyProfile;
   } catch {
     return emptyProfile;
   }

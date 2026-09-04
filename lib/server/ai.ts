@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import type {
   ApplicationPackContent,
+  AiSettings,
   JobAnalysis,
   Profile,
   ResumeContent,
@@ -122,6 +123,7 @@ async function requestStructured<T>(
   validator: z.ZodType<T>,
   instructions: string,
   input: string,
+  settings: AiSettings,
 ): Promise<T> {
   const client = createClient();
   const model = getRuntimeEnv().OPENAI_MODEL || 'gpt-5.6-luna';
@@ -132,8 +134,20 @@ async function requestStructured<T>(
       const response = await client.responses.create({
         model,
         store: false,
-        reasoning: { effort: 'low' },
-        instructions,
+        reasoning: { effort: settings.reasoningEffort },
+        instructions: [
+          instructions,
+          settings.writingStyle === 'concise'
+            ? '表达风格：高度精炼，优先短句和可直接使用的内容。'
+            : settings.writingStyle === 'detailed'
+              ? '表达风格：信息完整，但避免重复和空泛措辞。'
+              : '表达风格：专业、自然，兼顾信息密度与可读性。',
+          settings.outputLanguage === 'zh'
+            ? '除非题目明确要求英文，否则使用中文。'
+            : settings.outputLanguage === 'en'
+              ? 'Unless the prompt explicitly requires Chinese, respond in English.'
+              : '跟随岗位描述和问题所使用的语言。',
+        ].join('\n'),
         input,
         text: {
           format: {
@@ -166,9 +180,11 @@ export function sanitizeForAi(text: string) {
 export async function analyzeJobWithAi({
   jd,
   resumeText,
+  settings,
 }: {
   jd: string;
   resumeText: string;
+  settings: AiSettings;
 }): Promise<JobAnalysis> {
   return requestStructured(
     'job_analysis',
@@ -182,15 +198,18 @@ export async function analyzeJobWithAi({
       '使用岗位描述所用的语言，表达简洁。',
     ].join('\n'),
     `【岗位描述】\n${sanitizeForAi(jd)}\n\n【简历正文】\n${sanitizeForAi(resumeText)}`,
+    settings,
   );
 }
 
 export async function tuneResumeWithAi({
   jd,
   content,
+  settings,
 }: {
   jd: string;
   content: ResumeContent;
+  settings: AiSettings;
 }) {
   return requestStructured(
     'resume_tuning',
@@ -201,9 +220,10 @@ export async function tuneResumeWithAi({
       '只做微调：突出已有事实、调整顺序、改善动词与关键词，不得新增或夸大事实。',
       '每条建议都必须精确引用一段原文；若需要数字或事实而输入中没有，保持原文并将 needsUserInput 设为 true。',
       'sectionKey 使用 summary、experience、project、skills 或 extras。',
-      '建议控制在 12 条以内，优先高影响项。',
+      `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
     ].join('\n'),
     `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}`,
+    settings,
   );
 }
 
@@ -226,7 +246,8 @@ export async function generateMotivationWithAi({
       '避免空泛赞美，重点说明已有经历与岗位任务的连接。',
       `输出语言：${language === 'zh' ? '中文' : '英文'}。`,
     ].join('\n'),
-    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人事实】\n${sanitizeForAi(JSON.stringify(profile))}`,
+    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人事实】\n${sanitizeForAi(JSON.stringify(profileFacts(profile)))}`,
+    profile.aiSettings,
   );
 }
 
@@ -255,6 +276,12 @@ export async function generateCustomAnswerWithAi({
         : '答案应直接、具体、简洁。',
       '若问题要求的信息没有提供，明确说明需要用户补充，不要猜测。',
     ].join('\n'),
-    `【问题】\n${question}\n\n【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人事实】\n${sanitizeForAi(JSON.stringify(profile))}\n\n【已确认材料】\n${sanitizeForAi(JSON.stringify(existingPack))}`,
+    `【问题】\n${question}\n\n【岗位描述】\n${sanitizeForAi(jd)}\n\n【候选人事实】\n${sanitizeForAi(JSON.stringify(profileFacts(profile)))}\n\n【已确认材料】\n${sanitizeForAi(JSON.stringify(existingPack))}`,
+    profile.aiSettings,
   );
+}
+
+function profileFacts(profile: Profile) {
+  const { aiSettings: _aiSettings, ...facts } = profile;
+  return facts;
 }
