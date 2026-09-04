@@ -86,6 +86,100 @@ export function buildResumeHtml(content: ResumeContent, filename: string) {
   </script></body></html>`;
 }
 
+const LATEX_ESCAPES: Record<string, string> = {
+  '\\': '\\textbackslash{}',
+  '{': '\\{',
+  '}': '\\}',
+  '%': '\\%',
+  '$': '\\$',
+  '#': '\\#',
+  '_': '\\_',
+  '&': '\\&',
+  '~': '\\textasciitilde{}',
+  '^': '\\textasciicircum{}',
+};
+
+function tex(value: string) {
+  return [...value].map((char) => LATEX_ESCAPES[char] ?? (char === '\n' ? '\\\\\n' : char)).join('');
+}
+
+function texLine(value: string) {
+  const { lead, rest } = splitLead(value);
+  return `${lead ? `\\textbf{${tex(lead)}} ` : ''}${tex(rest)}`;
+}
+
+function texEntry(heading: string, meta: string, bullets: string[]) {
+  const items = bullets.length ? `
+\\begin{itemize}
+${bullets.map((bullet) => `  \\item ${texLine(bullet)}`).join('\n')}
+\\end{itemize}` : '';
+  return `\\resumeentry{${tex(heading)}}{${tex(meta)}}${items}`;
+}
+
+function texSection(title: string, body: string) {
+  return body ? `\\ressection{${tex(title)}}
+${body}` : '';
+}
+
+export function buildResumeTex(content: ResumeContent) {
+  const section = labels(content);
+  const contact = isContactLine(content.summary);
+  const education = groupEducation(content.education).map((entry) => `\\resumeentry{${tex(entry.heading)}}{${tex(entry.meta)}}
+${entry.details.map((detail) => `${texLine(detail)}\\par`).join('\n')}`).join('\n');
+  const experiences = content.experiences.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
+  const projects = content.projects.map((entry) => texEntry(entry.heading, entry.meta, entry.bullets)).join('\n');
+  const lines = (values: string[]) => values.map((value) => `${texLine(value)}\\par`).join('\n');
+  return `% Overleaf compiler: XeLaTeX
+% Optional photo: upload a file named resume-photo.jpg
+\\documentclass[UTF8,10pt,a4paper]{ctexart}
+\\usepackage[left=16mm,right=16mm,top=15mm,bottom=14mm]{geometry}
+\\usepackage{fontspec}
+\\usepackage{graphicx}
+\\usepackage{wrapfig}
+\\usepackage{adjustbox}
+\\usepackage{tabularx}
+\\usepackage{array}
+\\usepackage{enumitem}
+\\setmainfont{TeX Gyre Heros}
+\\setCJKmainfont{FandolHei-Regular}[BoldFont=FandolHei-Bold]
+\\pagestyle{empty}
+\\setlength{\\parindent}{0pt}
+\\setlength{\\parskip}{0pt}
+\\setlength{\\textfloatsep}{0pt}
+\\setlength{\\intextsep}{0pt}
+\\newcommand{\\ressection}[1]{%
+  \\vspace{2.3mm}{\\fontsize{10.5pt}{12pt}\\selectfont\\bfseries #1}\\par
+  \\vspace{-1.1mm}\\rule{\\linewidth}{0.45pt}\\vspace{0.5mm}}
+\\newcommand{\\resumeentry}[2]{%
+  \\begin{tabularx}{\\linewidth}{@{}>{\\fontsize{9.2pt}{11pt}\\selectfont\\bfseries}X>{\\raggedleft\\arraybackslash\\fontsize{7.5pt}{9pt}\\selectfont\\bfseries}l@{}}
+  #1 & #2
+  \\end{tabularx}\\vspace{-1.4mm}}
+\\setlist[itemize]{label=-,leftmargin=3.6mm,itemsep=0pt,topsep=0.2mm,parsep=0pt,partopsep=0pt}
+\\begin{document}
+\\begin{adjustbox}{max width=\\textwidth,max totalheight=0.98\\textheight,center}
+\\begin{minipage}{\\textwidth}
+\\IfFileExists{resume-photo.jpg}{%
+  \\begin{wrapfigure}{r}{20mm}
+    \\vspace{-4mm}\\centering
+    \\includegraphics[width=20mm,height=30mm]{resume-photo.jpg}
+    \\vspace{-5mm}
+  \\end{wrapfigure}}{}
+{\\fontsize{20pt}{22pt}\\selectfont\\bfseries ${tex(content.headline)}}\\par
+\\vspace{1.2mm}
+${contact ? `{\\fontsize{8.6pt}{10.5pt}\\selectfont ${tex(content.summary)}}\\par` : ''}
+\\fontsize{8.6pt}{12pt}\\selectfont
+${!contact && content.summary ? texSection(section.summary, `${tex(content.summary)}\\par`) : ''}
+${texSection(section.education, education)}
+${texSection(section.experiences, experiences)}
+${texSection(section.projects, projects)}
+${texSection(section.skills, lines(content.skills))}
+${texSection(section.extras, lines(content.extras))}
+\\end{minipage}
+\\end{adjustbox}
+\\end{document}
+`;
+}
+
 function density(content: ResumeContent) {
   const all = [content.summary, ...content.education, ...content.experiences.flatMap((entry) => [entry.heading, entry.meta, ...entry.bullets]), ...content.projects.flatMap((entry) => [entry.heading, entry.meta, ...entry.bullets]), ...content.skills, ...content.extras];
   const weighted = all.reduce((total, value) => total + [...value].reduce((sum, char) => sum + (/[^\u0000-\u00ff]/.test(char) ? 1 : .52), 0), 0);

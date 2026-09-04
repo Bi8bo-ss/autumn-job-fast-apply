@@ -1,5 +1,5 @@
 import { resumeContentSchema } from '@/lib/product-types';
-import { buildResumeHtml, packResumeDocument } from '@/lib/resume-export';
+import { buildResumeHtml, buildResumeTex, packResumeDocument } from '@/lib/resume-export';
 import { normalizeResumeContent } from '@/lib/resume-parser';
 import { requireApiUser } from '@/lib/server/auth';
 import { getResumeVersion } from '@/lib/server/data';
@@ -31,10 +31,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const content = normalizeResumeContent(raw, version.sourceText);
     const format = new URL(request.url).searchParams.get('format');
     const filename = safeName(`${version.resumeName}-v${version.versionNumber}`);
+    if (format === 'tex') {
+      return new Response(buildResumeTex(content), { headers: { 'content-type': 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${filename}.tex"` } });
+    }
     if (format === 'pdf') {
       return new Response(buildResumeHtml(content, filename), { headers: { 'content-type': 'text/html; charset=utf-8', 'content-disposition': `inline; filename="${filename}.html"` } });
     }
-    if (format !== 'docx') return json({ error: '仅支持 docx 或 pdf。' }, { status: 400 });
+    if (format !== 'docx') return json({ error: '仅支持 docx、pdf 或 tex。' }, { status: 400 });
     const bytes = await packResumeDocument(content, await loadPortrait(request));
     return new Response(new Uint8Array(bytes), { headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'content-disposition': `attachment; filename="${filename}.docx"` } });
   } catch (error) {
