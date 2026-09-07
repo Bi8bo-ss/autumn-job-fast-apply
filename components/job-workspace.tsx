@@ -33,7 +33,7 @@ import {
 } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
 import { normalizeResumeContent, resumeContentToText } from '@/lib/resume-parser';
-import { applyResumeSuggestion, parseSuggestionSection } from '@/lib/resume-suggestions';
+import { applyResumeSuggestion, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
 
 type WorkspaceVersion = {
   id: string;
@@ -79,7 +79,7 @@ type WorkspaceTab = 'job' | 'analysis' | 'tune' | 'pack' | 'exports';
 const workspaceTabs: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
   { id: 'job', label: '岗位信息', shortLabel: '岗位' },
   { id: 'analysis', label: '匹配分析', shortLabel: '匹配' },
-  { id: 'tune', label: '简历微调', shortLabel: '微调' },
+  { id: 'tune', label: '岗位定向改写', shortLabel: '改写' },
   { id: 'pack', label: '填写材料', shortLabel: '材料' },
   { id: 'exports', label: '导出', shortLabel: '导出' },
 ];
@@ -260,11 +260,11 @@ export function JobWorkspace({
           <section className="workspace-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <h2 className="font-semibold">简历微调</h2>
+                <h2 className="font-semibold">岗位定向改写</h2>
                 {analysis ? <span className="rounded-md bg-[#edf3ff] px-2.5 py-1 text-xs font-semibold text-primary">岗位匹配 {analysis.score}%</span> : null}
                 {suggestions.length ? <span className="text-xs font-medium text-muted-foreground">当前建议 {activeNumber} / {suggestions.length}</span> : null}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">逐条核对证据与表述，接受后实时更新左侧简历。</p>
+              <p className="mt-1 text-sm text-muted-foreground">逐条新增、删除、合并或改写；经历与项目统一为“加粗短标题：正文”。</p>
             </div>
             <ActionSetup base={base} selected={selected} setSelected={setSelected} label="重新生成" busy={busy.includes('/tune')} disabled={!selected} onClick={() => void call(`/api/jobs/${job.id}/tune`, { resumeVersionId: selected })} />
           </section>
@@ -463,8 +463,8 @@ function ResumePreview({ content, resumeName, active, embedded = false }: { cont
             <h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>
             {content.summary ? <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{content.summary}</p> : null}
             <PreviewSection title={content.language === 'zh' ? '教育经历' : 'EDUCATION'} lines={content.education} />
-            <PreviewEntries title={content.language === 'zh' ? '实习经历' : 'EXPERIENCE'} entries={content.experiences} />
-            <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} />
+            <PreviewEntries title={content.language === 'zh' ? '实习经历' : 'EXPERIENCE'} entries={content.experiences} language={content.language} />
+            <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} language={content.language} />
             <PreviewSection title={content.language === 'zh' ? '技能' : 'SKILLS'} lines={content.skills} />
             <PreviewSection title={content.language === 'zh' ? '其他信息' : 'ADDITIONAL'} lines={content.extras} />
           </article>
@@ -481,7 +481,7 @@ function PreviewSection({ title, lines }: { title: string; lines: string[] }) {
   return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none">{title}</h2><div className="mt-[3px]">{lines.map((line, index) => <p key={index} className="whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{line}</p>)}</div></section>;
 }
 
-function PreviewEntries({ title, entries }: { title: string; entries: ResumeContent['experiences'] }) {
+function PreviewEntries({ title, entries, language }: { title: string; entries: ResumeContent['experiences']; language: ResumeContent['language'] }) {
   if (!entries.length) return null;
   return (
     <section className="mt-[7px]">
@@ -490,11 +490,21 @@ function PreviewEntries({ title, entries }: { title: string; entries: ResumeCont
         {entries.map((entry, index) => (
           <div key={index}>
             <div className="flex items-baseline justify-between gap-3"><p className="text-[11.5px] font-bold leading-[1.3]">{entry.heading}</p><p className="shrink-0 text-[9.5px] font-bold leading-[1.2]">{entry.meta}</p></div>
-            <ul className="mt-[1px]">{entry.bullets.map((bullet, itemIndex) => <li key={itemIndex} className="flex gap-2 text-[11px] leading-[1.35]"><span aria-hidden="true">–</span><span>{bullet}</span></li>)}</ul>
+            <ul className="mt-[1px]">{entry.bullets.map((bullet, itemIndex) => <PreviewBullet key={itemIndex} bullet={bullet} language={language} />)}</ul>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function PreviewBullet({ bullet, language }: { bullet: string; language: ResumeContent['language'] }) {
+  const { lead, rest } = resumeBulletParts(bullet, language);
+  return (
+    <li className="flex gap-2 text-[11px] leading-[1.35]">
+      <span aria-hidden="true">-</span>
+      <span><strong>{lead}</strong>{language === 'en' ? ' ' : ''}{rest}</span>
+    </li>
   );
 }
 
@@ -512,12 +522,17 @@ function Suggestion({
   total: number;
 }) {
   const target = parseSuggestionSection(suggestion.sectionKey);
-  const actionLabel = target.operation === 'append' ? '新增' : target.operation === 'delete' ? '删除' : '改写';
+  const actionLabel = target.operation === 'append' ? '新增' : target.operation === 'delete' ? '删除 / 合并' : '改写';
   const savedText = suggestion.editedText || suggestion.proposedText;
   const [edit, setEdit] = useState(savedText);
   const [busy, setBusy] = useState<'' | 'accepted' | 'rejected'>('');
   const [actionError, setActionError] = useState('');
   const needsFact = Boolean(suggestion.needsUserInput) && edit.trim() === String(suggestion.proposedText || '').trim();
+  const confirmLabel = target.operation === 'append'
+    ? '确认新增'
+    : target.operation === 'delete' && !edit.trim()
+      ? '确认删除'
+      : '接受改写';
 
   async function update(state: 'accepted' | 'rejected') {
     if (state === 'accepted' && needsFact) {
@@ -570,21 +585,21 @@ function Suggestion({
 
         {suggestion.originalText ? (
           <section>
-            <p className="text-xs font-semibold text-muted-foreground">当前简历表述</p>
+            <p className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '添加到这段经历 / 项目' : target.operation === 'delete' ? '准备删除的内容' : '当前简历表述'}</p>
             <p className="mt-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm leading-6 text-[#58657a]">{suggestion.originalText}</p>
           </section>
         ) : null}
 
         <section>
           <div className="flex items-center justify-between gap-2">
-            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">建议修改（可编辑）</label>
+            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '新增要点（可编辑）' : target.operation === 'delete' ? '删除后留空；填写内容则改写' : '建议改写（可编辑）'}</label>
             <span className="text-xs tabular-nums text-muted-foreground">{edit.length} 字</span>
           </div>
           <Textarea
             id={`suggestion-${suggestion.id}`}
             className="mt-2 min-h-36 border-primary/35 bg-white text-sm leading-7"
             value={edit}
-            placeholder={target.operation === 'delete' ? '保持为空以删除这条内容' : ''}
+            placeholder={target.operation === 'delete' ? '保持为空以删除；也可以填写“短标题：正文”改为合并后的内容' : '短标题：正文'}
             onChange={(event) => editText(event.target.value)}
           />
         </section>
@@ -603,7 +618,7 @@ function Suggestion({
           <X />{busy === 'rejected' ? '保存中…' : '跳过'}
         </Button>
         <Button size="lg" disabled={Boolean(busy)} onClick={() => void update('accepted')}>
-          <Check />{busy === 'accepted' ? '保存中…' : '接受修改'}
+          <Check />{busy === 'accepted' ? '保存中…' : confirmLabel}
         </Button>
       </footer>
     </article>

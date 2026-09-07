@@ -50,12 +50,23 @@ export function applyResumeSuggestion(
     target.section,
     originalText,
     proposedText,
+    source.language,
   );
 
   if (target.operation === 'append') {
-    if (!nextText || (target.section !== 'skills' && target.section !== 'extras')) return content;
-    const lines = target.section === 'skills' ? content.skills : content.extras;
-    if (!lines.some((line) => line.trim() === nextText)) lines.push(nextText);
+    if (!nextText) return content;
+    if (target.section === 'skills' || target.section === 'extras') {
+      const lines = target.section === 'skills' ? content.skills : content.extras;
+      if (!lines.some((line) => line.trim() === nextText)) lines.push(nextText);
+      return content;
+    }
+    if (target.section !== 'experience' && target.section !== 'project') return content;
+    const entries = target.section === 'experience' ? content.experiences : content.projects;
+    for (const entry of entries) {
+      if (!entry.bullets.includes(originalText)) continue;
+      if (!entry.bullets.some((line) => line.trim() === nextText)) entry.bullets.push(nextText);
+      break;
+    }
     return content;
   }
 
@@ -74,14 +85,9 @@ export function normalizeSuggestedResumeText(
   section: ResumeSuggestionSection,
   originalText: string,
   proposedText: string,
+  language?: ResumeContent['language'],
 ) {
-  const compact = proposedText
-    .replace(/\r?\n+\s*(?:[-–—•·▪]|\d+[.)、])\s*/g, '；')
-    .replace(/\r?\n+/g, ' ')
-    .replace(/^\s*(?:[-–—•·▪]|\d+[.)、])\s*/, '')
-    .replace(/\*\*|__|\\textbf\s*\{([^}]*)\}/g, '$1')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
+  const compact = cleanText(proposedText);
 
   if (!compact || (section !== 'experience' && section !== 'project')) {
     return compact;
@@ -89,11 +95,40 @@ export function normalizeSuggestedResumeText(
 
   const original = splitBulletLead(originalText);
   const proposed = splitBulletLead(compact);
-  if (original.lead) {
-    const separator = original.lead.endsWith(':') ? ' ' : '';
-    return `${original.lead}${separator}${proposed.lead ? proposed.rest : compact}`.trim();
+  if (proposed.lead) {
+    return joinBullet(proposed.lead, proposed.rest, language || inferLanguage(compact));
   }
-  return proposed.lead ? proposed.rest.trim() : compact;
+  if (original.lead) {
+    return joinBullet(original.lead, compact, language || inferLanguage(originalText));
+  }
+  return ensureResumeBulletLead(compact, language || inferLanguage(compact));
+}
+
+export function hasResumeBulletLead(value: string) {
+  return Boolean(splitBulletLead(cleanText(value)).lead);
+}
+
+export function resumeBulletParts(value: string, language: ResumeContent['language']) {
+  const compact = cleanText(value);
+  const parsed = splitBulletLead(compact);
+  const label = parsed.lead || inferBulletLead(parsed.rest, language);
+  return {
+    lead: `${label}${language === 'zh' ? '：' : ':'}`,
+    rest: parsed.rest,
+  };
+}
+
+export function ensureResumeBulletLead(value: string, language: ResumeContent['language']) {
+  const { lead, rest } = resumeBulletParts(value, language);
+  return `${lead}${language === 'en' ? ' ' : ''}${rest}`.trim();
+}
+
+export function ensureResumeBulletLeads(content: ResumeContent): ResumeContent {
+  const next = structuredClone(content);
+  for (const entry of [...next.experiences, ...next.projects]) {
+    entry.bullets = entry.bullets.map((bullet) => ensureResumeBulletLead(bullet, next.language));
+  }
+  return next;
 }
 
 export function resumeContainsExactText(value: unknown, target: string): boolean {
@@ -177,8 +212,47 @@ function deleteFirst(values: string[], target: string) {
 }
 
 function splitBulletLead(value: string) {
-  const match = value.trim().match(/^([^：:\n]{1,12}[：:])\s*(.+)$/);
+  const match = value.trim().match(/^([^：:\n]{1,18})[：:]\s*(.+)$/);
   return match
-    ? { lead: match[1], rest: match[2] }
+    ? { lead: match[1].trim(), rest: match[2].trim() }
     : { lead: '', rest: value.trim() };
+}
+
+function cleanText(value: string) {
+  return value
+    .replace(/\r?\n+\s*(?:[-–—•·▪]|\d+[.)、])\s*/g, '；')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/^\s*(?:[-–—•·▪]|\d+[.)、])\s*/, '')
+    .replace(/\*\*|__|\\textbf\s*\{([^}]*)\}/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function joinBullet(lead: string, rest: string, language: ResumeContent['language']) {
+  return `${lead.trim()}${language === 'zh' ? '：' : ': '}${rest.trim()}`.trim();
+}
+
+function inferLanguage(value: string): ResumeContent['language'] {
+  return /[\u3400-\u9fff]/.test(value) ? 'zh' : 'en';
+}
+
+function inferBulletLead(value: string, language: ResumeContent['language']) {
+  if (language === 'en') {
+    if (/collaborat|stakeholder|cross-functional|partner/i.test(value)) return 'Collaboration';
+    if (/automat|efficien|reduc|accelerat|optim/i.test(value)) return 'Efficiency';
+    if (/analy|metric|dashboard|sql|python|model|experiment/i.test(value)) return 'Analytics';
+    if (/research|survey|interview|persona|journey/i.test(value)) return 'Research';
+    if (/design|build|develop|implement|launch/i.test(value)) return 'Delivery';
+    return 'Impact';
+  }
+  if (/协同|对接|沟通|统一.+口径|跨部门/.test(value)) return '协同推进';
+  if (/自动化|效率|耗时|压缩|提效|缩短/.test(value)) return '效率优化';
+  if (/看板|指标|监控|覆盖率|渗透率|达成率/.test(value)) return '指标体系';
+  if (/SQL|Python|模型|聚类|实验|检验|ANOVA|数据分析/i.test(value)) return '数据分析';
+  if (/用户|需求|Persona|Journey|PRD|体验/.test(value)) return '用户研究';
+  if (/流程|BPMN|DFD|ERD|系统|内控/.test(value)) return '流程优化';
+  if (/调研|研究|洞察/.test(value)) return '业务洞察';
+  if (/搭建|开发|构建|实现|设计/.test(value)) return '方案搭建';
+  if (/推进|落地|统筹|负责|承接/.test(value)) return '项目推进';
+  return '成果产出';
 }
