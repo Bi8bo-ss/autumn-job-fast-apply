@@ -53,6 +53,14 @@ The stage rail and tune action region were inspected at native size because they
 - Post-fix evidence: `final-mobile-job.png` and `final-mobile-tune.png` show all five stages at 390 × 844.
 - Result: earlier P2 resolved; no new P0/P1/P2 issue found.
 
+### Interaction Regression Follow-up
+
+- [P0] After the initial production handoff, the user reported that navigation controls did not respond. Reproduction showed that Vinext's `next/link` intercepted internal clicks without completing the route change.
+- Fix: introduced `AppLink`, which keeps a real `href` for progressive enhancement and forces an ordinary document navigation while preserving modified-click behavior.
+- Post-fix evidence: browser tests reached `/resumes`, `/jobs`, `/jobs/new` and `/profile` through the actual visible controls; job search, workspace tabs, settings choices and the mobile “更多” menu also responded.
+- Hardening evidence: a capture-phase test deliberately called `preventDefault()` before the component handler to simulate the production router interception; the repaired link still navigated to `/resumes`.
+- Result: P0 resolved; the regression rule is recorded in `FRONTEND_CONTRACT.md`.
+
 ## Findings
 
 No actionable P0, P1 or P2 findings remain.

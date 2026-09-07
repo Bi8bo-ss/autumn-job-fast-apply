@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { ArrowRight, BriefcaseBusiness, Search } from 'lucide-react';
+import { AppLink } from '@/components/app-link';
 import { Input } from '@/components/ui/input';
 import { jobStatusLabels, jobStatuses, type JobStatus } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
@@ -32,9 +32,9 @@ export function JobsExplorer({ jobs }: { jobs: JobRecord[] }) {
         <BriefcaseBusiness className="mx-auto size-8 text-slate-400" />
         <h2 className="mt-4 font-semibold">还没有岗位</h2>
         <p className="mt-2 text-sm text-muted-foreground">粘贴 JD，系统会自动匹配简历并开始修改。</p>
-        <Link href="/jobs/new" data-interactive="true" className="mt-5 inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-white">
+        <AppLink href="/jobs/new" data-interactive="true" className="mt-5 inline-flex min-h-11 items-center rounded-lg bg-primary px-4 text-sm font-semibold text-white">
           粘贴岗位 JD
-        </Link>
+        </AppLink>
       </section>
     );
   }
@@ -72,7 +72,7 @@ export function JobsExplorer({ jobs }: { jobs: JobRecord[] }) {
         {visible.length ? (
           <div className="divide-y">
             {visible.map((job) => (
-              <Link
+              <AppLink
                 key={job.id}
                 href={`/jobs/${job.id}`}
                 data-interactive="true"
@@ -94,7 +94,7 @@ export function JobsExplorer({ jobs }: { jobs: JobRecord[] }) {
                   {jobStatusLabels[job.status as JobStatus] || job.status}
                 </span>
                 <ArrowRight className="hidden size-4 text-slate-400 transition-transform group-hover:translate-x-0.5 sm:block" />
-              </Link>
+              </AppLink>
             ))}
           </div>
         ) : (

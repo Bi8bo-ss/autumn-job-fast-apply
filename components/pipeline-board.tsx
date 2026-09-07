@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AlertCircle, BriefcaseBusiness, GripVertical } from 'lucide-react';
+import { AppLink } from '@/components/app-link';
 import { jobStatusLabels, jobStatuses, type JobStatus } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
 import { cn } from '@/lib/utils';
@@ -72,10 +72,10 @@ export function PipelineBoard({ initial }: { initial: JobRecord[] }) {
                       >
                         <GripVertical className="size-4" aria-hidden="true" />
                       </button>
-                      <Link href={`/jobs/${job.id}`} className="min-w-0 flex-1">
+                      <AppLink href={`/jobs/${job.id}`} className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{job.company || '公司未识别'}</p>
                         <p className="mt-1 line-clamp-2 text-sm leading-5 text-muted-foreground">{job.role || '岗位未识别'}</p>
-                      </Link>
+                      </AppLink>
                     </div>
                     <select
                       aria-label={`更新 ${job.company} ${job.role} 状态`}
@@ -122,13 +122,13 @@ export function PipelineBoard({ initial }: { initial: JobRecord[] }) {
             <div className="divide-y">
               {mobileJobs.map((job) => (
                 <article key={job.id} className="p-4">
-                  <Link href={`/jobs/${job.id}`} className="flex items-start gap-3">
+                  <AppLink href={`/jobs/${job.id}`} className="flex items-start gap-3">
                     <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#edf3ff] text-primary"><BriefcaseBusiness className="size-4" /></span>
                     <span className="min-w-0">
                       <strong className="block truncate text-sm">{job.company || '公司未识别'}</strong>
                       <span className="mt-1 block truncate text-sm text-muted-foreground">{job.role || '岗位未识别'}</span>
                     </span>
-                  </Link>
+                  </AppLink>
                   <label className="mt-4 block text-xs font-medium text-muted-foreground">
                     移动到
                     <select value={job.status} onChange={(event) => void move(job.id, event.target.value as JobStatus)} className="mt-2 h-11 w-full rounded-lg border bg-white px-3 text-sm text-foreground">

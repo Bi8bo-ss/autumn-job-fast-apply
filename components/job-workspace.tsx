@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -19,6 +18,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
+import { AppLink } from '@/components/app-link';
 import { OverleafCopyButton } from '@/components/overleaf-copy-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -188,7 +188,7 @@ export function JobWorkspace({
     <div className="mx-auto max-w-[1420px] space-y-4">
       <section className="workspace-panel flex flex-col gap-4 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#58657a]">
-          <Link href="/jobs" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><ChevronLeft className="size-4" />全部岗位</Link>
+          <AppLink href="/jobs" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><ChevronLeft className="size-4" />全部岗位</AppLink>
           <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{job.location || '地点未填写'}</span>
           <span className={cn('inline-flex items-center gap-1.5', !job.deadline && 'font-medium text-orange-700')}>
             {!job.deadline ? <AlertTriangle className="size-4" /> : null}
@@ -762,7 +762,7 @@ function Empty({ text, action }: { text: string; action?: { href: string; label:
   return (
     <div className="rounded-lg border border-dashed px-6 py-12 text-center text-sm leading-6 text-muted-foreground">
       <p>{text}</p>
-      {action ? <Link href={action.href} className="mt-3 inline-flex min-h-10 items-center font-semibold text-primary hover:underline">{action.label}<ChevronRight className="size-4" /></Link> : null}
+      {action ? <AppLink href={action.href} className="mt-3 inline-flex min-h-10 items-center font-semibold text-primary hover:underline">{action.label}<ChevronRight className="size-4" /></AppLink> : null}
     </div>
   );
 }

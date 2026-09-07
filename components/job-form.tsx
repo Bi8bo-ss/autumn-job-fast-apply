@@ -1,10 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useState, type SubmitEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, FileSearch, LoaderCircle, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AppLink } from '@/components/app-link';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -159,7 +159,7 @@ export function JobForm({ resumes }: { resumes: ResumeRecord[] }) {
           </ol>
           <div className={cn('mt-7 rounded-lg border px-4 py-3 text-sm leading-6', resumeCount ? 'border-emerald-200 bg-emerald-50 text-emerald-900' : 'border-orange-200 bg-orange-50 text-orange-900')}>
             {resumeCount ? `已有 ${resumeCount} 份可匹配基础简历。` : '尚未导入基础简历。岗位会保存，但无法自动微调。'}
-            {!resumeCount ? <Link href="/resumes" className="ml-1 font-semibold underline underline-offset-2">先去导入</Link> : null}
+            {!resumeCount ? <AppLink href="/resumes" className="ml-1 font-semibold underline underline-offset-2">先去导入</AppLink> : null}
           </div>
         </aside>
       </section>

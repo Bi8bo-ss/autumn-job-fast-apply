@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   BriefcaseBusiness,
@@ -14,6 +13,7 @@ import {
   UserRound,
   Workflow,
 } from 'lucide-react';
+import { AppLink } from '@/components/app-link';
 import { cn } from '@/lib/utils';
 
 const primaryNav = [
@@ -58,7 +58,7 @@ export function AppShell({
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto flex min-h-screen max-w-[1680px]">
         <aside className="hidden w-[216px] shrink-0 border-r bg-white lg:flex lg:flex-col">
-          <Link href="/" className="flex h-[72px] items-center gap-3 border-b px-5" data-interactive="true">
+          <AppLink href="/" className="flex h-[72px] items-center gap-3 border-b px-5" data-interactive="true">
             <span className="grid size-9 place-items-center rounded-lg bg-primary text-white">
               <Target className="size-5" strokeWidth={2.3} />
             </span>
@@ -66,13 +66,13 @@ export function AppShell({
               <strong className="block text-[15px] font-semibold">秋招速投</strong>
               <span className="mt-0.5 block text-xs text-muted-foreground">个人投递工作台</span>
             </span>
-          </Link>
+          </AppLink>
 
           <nav className="space-y-1 px-3 py-5" aria-label="主要导航">
             {desktopNav.map(({ href, label, icon: Icon }) => {
               const active = isActive(pathname, href);
               return (
-                <Link
+                <AppLink
                   key={href}
                   href={href}
                   aria-current={active ? 'page' : undefined}
@@ -86,7 +86,7 @@ export function AppShell({
                 >
                   <Icon className="size-[18px]" strokeWidth={active ? 2.2 : 1.8} />
                   {label}
-                </Link>
+                </AppLink>
               );
             })}
           </nav>
@@ -108,7 +108,7 @@ export function AppShell({
             </div>
             <div className="flex shrink-0 items-center gap-2">
               {showNewJob && pathname !== '/jobs/new' ? (
-                <Link
+                <AppLink
                   href="/jobs/new"
                   data-interactive="true"
                   className="pressable inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-3.5 text-sm font-semibold text-white shadow-[0_5px_14px_-7px_rgb(21_94_239_/_75%)] hover:bg-[#0f52d5]"
@@ -116,7 +116,7 @@ export function AppShell({
                   <Plus className="size-4" />
                   <span className="hidden sm:inline">新建岗位</span>
                   <span className="sm:hidden">新建</span>
-                </Link>
+                </AppLink>
               ) : null}
             </div>
           </header>
@@ -129,7 +129,7 @@ export function AppShell({
         {primaryNav.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href);
           return (
-            <Link
+            <AppLink
               key={href}
               href={href}
               aria-current={active ? 'page' : undefined}
@@ -141,7 +141,7 @@ export function AppShell({
             >
               <Icon className="size-[18px]" strokeWidth={active ? 2.25 : 1.8} />
               {label}
-            </Link>
+            </AppLink>
           );
         })}
         <details className="group relative">
@@ -154,11 +154,11 @@ export function AppShell({
           </summary>
           <div className="absolute bottom-[58px] right-1 w-48 overflow-hidden rounded-xl border bg-white p-1.5 shadow-[0_16px_36px_-16px_rgb(15_23_42_/_38%)]">
             {secondaryNav.map(({ href, label, icon: Icon }) => (
-              <Link key={href} href={href} data-interactive="true" className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-[#354057] hover:bg-slate-50">
+              <AppLink key={href} href={href} data-interactive="true" className="flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm text-[#354057] hover:bg-slate-50">
                 <Icon className="size-[18px] text-muted-foreground" />
                 <span className="flex-1">{label}</span>
                 <ChevronRight className="size-4 text-slate-400" />
-              </Link>
+              </AppLink>
             ))}
           </div>
         </details>

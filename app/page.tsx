@@ -1,5 +1,5 @@
-import Link from 'next/link';
 import { ArrowRight, BriefcaseBusiness, CalendarClock, FileText, Workflow } from 'lucide-react';
+import { AppLink } from '@/components/app-link';
 import { AppShell } from '@/components/app-shell';
 import { jobStatusLabels, jobStatuses, type JobStatus } from '@/lib/product-types';
 import { requirePageUser } from '@/lib/server/auth';
@@ -30,14 +30,14 @@ export default async function Home() {
             </div>
             <h2 className="mt-4 max-w-2xl text-2xl font-semibold tracking-[-0.035em] sm:text-[30px]">{next.title}</h2>
             <p className="mt-3 max-w-2xl text-[15px] leading-7 text-muted-foreground">{next.description}</p>
-            <Link
+            <AppLink
               href={next.href}
               data-interactive="true"
               className="pressable mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-white hover:bg-[#0f52d5]"
             >
               {next.action}
               <ArrowRight className="size-4" />
-            </Link>
+            </AppLink>
           </div>
           <div className="border-t bg-[#f8faff] p-6 lg:border-l lg:border-t-0">
             <p className="text-sm font-semibold">当前进度</p>
@@ -56,12 +56,12 @@ export default async function Home() {
               <h2 className="font-semibold">最近岗位</h2>
               <p className="mt-1 text-sm text-muted-foreground">从上次停下的位置继续。</p>
             </div>
-            <Link href="/jobs" data-interactive="true" className="text-sm font-medium text-primary hover:underline">查看全部</Link>
+            <AppLink href="/jobs" data-interactive="true" className="text-sm font-medium text-primary hover:underline">查看全部</AppLink>
           </div>
           {jobs.length ? (
             <div className="divide-y">
               {jobs.slice(0, 5).map((job) => (
-                <Link
+                <AppLink
                   key={job.id}
                   href={`/jobs/${job.id}`}
                   data-interactive="true"
@@ -78,7 +78,7 @@ export default async function Home() {
                     <span className="status-dot bg-primary" />
                     {jobStatusLabels[job.status as JobStatus] || job.status}
                   </span>
-                </Link>
+                </AppLink>
               ))}
             </div>
           ) : (
@@ -93,7 +93,7 @@ export default async function Home() {
         <section className="workspace-panel overflow-hidden">
           <div className="flex items-center justify-between border-b px-5 py-4 sm:px-6">
             <h2 className="font-semibold">投递阶段</h2>
-            <Link href="/pipeline" data-interactive="true" className="text-sm font-medium text-primary hover:underline">打开看板</Link>
+            <AppLink href="/pipeline" data-interactive="true" className="text-sm font-medium text-primary hover:underline">打开看板</AppLink>
           </div>
           <div className="grid grid-cols-3 divide-x sm:grid-cols-6">
             {jobStatuses.map((status) => (

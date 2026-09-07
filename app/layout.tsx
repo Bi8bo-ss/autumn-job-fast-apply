@@ -16,6 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: '秋招速投 · 个人投递工作台',
   description: '管理简历版本、针对岗位逐条微调，并生成官网投递材料。',
+  icons: { icon: '/favicon.svg' },
 };
 
 export default function RootLayout({
