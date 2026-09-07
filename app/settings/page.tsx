@@ -11,7 +11,7 @@ export default async function SettingsPage() {
   const profile = await getProfile(user.userId);
   const runtime = getRuntimeEnv();
   return (
-    <AppShell title="AI 设置" eyebrow="INTELLIGENCE LAYER">
+    <AppShell title="AI 设置" description="控制生成偏好、隐私边界与连接状态。">
       <AiSettingsPanel
         initial={profile.aiSettings}
         connection={{

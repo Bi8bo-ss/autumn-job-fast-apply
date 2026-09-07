@@ -1,4 +1,5 @@
 'use client';
+/* oxlint-disable jsx-a11y/label-has-associated-control -- This generic primitive supports both htmlFor and wrapped controls. */
 
 import * as React from 'react';
 

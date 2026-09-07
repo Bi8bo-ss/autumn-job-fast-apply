@@ -1,4 +1,5 @@
 'use client';
+/* oxlint-disable typescript/restrict-template-expressions -- Recharts accepts mixed string and numeric data keys. */
 
 import * as React from 'react';
 import * as RechartsPrimitive from 'recharts';

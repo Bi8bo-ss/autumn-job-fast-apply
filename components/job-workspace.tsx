@@ -1,123 +1,768 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+
+import Link from 'next/link';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, Clipboard, FileDown, LoaderCircle, Sparkles, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clipboard,
+  Eye,
+  FileDown,
+  LoaderCircle,
+  MapPin,
+  Sparkles,
+  X,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { OverleafCopyButton } from '@/components/overleaf-copy-button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { jobStatusLabels, jobStatuses, type ApplicationPackContent, type JobAnalysis, type ResumeContent } from '@/lib/product-types';
+import {
+  jobStatusLabels,
+  jobStatuses,
+  type ApplicationPackContent,
+  type JobAnalysis,
+  type ResumeContent,
+  type TuneSuggestion,
+} from '@/lib/product-types';
+import type { JobRecord } from '@/lib/server/data';
 import { normalizeResumeContent, resumeContentToText } from '@/lib/resume-parser';
 import { applyResumeSuggestion, parseSuggestionSection } from '@/lib/resume-suggestions';
 
-type Data = any;
+type WorkspaceVersion = {
+  id: string;
+  resumeId: string;
+  jobId: string | null;
+  parentVersionId: string | null;
+  versionNumber: number;
+  contentJson: string;
+  sourceText: string;
+  createdAt: string;
+  resumeName: string;
+  language: 'zh' | 'en';
+};
+
+type TuneRun = {
+  id: string;
+  resumeVersionId: string;
+  status: string;
+  analysisJson?: string | null;
+  createdAt?: string;
+};
+
+type PackRecord = {
+  id: string;
+  resumeVersionId: string;
+  contentJson: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type AnswerRecord = { id: string; question: string; answer: string; charLimit?: number | null; createdAt?: string };
+type WorkspaceSuggestion = TuneSuggestion & { needsUserInput: boolean | number };
+type WorkspaceData = {
+  job: JobRecord;
+  versions: WorkspaceVersion[];
+  run: TuneRun | null;
+  suggestions: WorkspaceSuggestion[];
+  pack: PackRecord | null;
+  answers: AnswerRecord[];
+};
+
 type WorkspaceTab = 'job' | 'analysis' | 'tune' | 'pack' | 'exports';
-const workspaceTabs: Array<{ id: WorkspaceTab; label: string }> = [
-  { id: 'job', label: '岗位信息' },
-  { id: 'analysis', label: 'JD 分析' },
-  { id: 'tune', label: '简历微调' },
-  { id: 'pack', label: '填写材料' },
-  { id: 'exports', label: '导出记录' },
+const workspaceTabs: Array<{ id: WorkspaceTab; label: string; shortLabel: string }> = [
+  { id: 'job', label: '岗位信息', shortLabel: '岗位' },
+  { id: 'analysis', label: '匹配分析', shortLabel: '匹配' },
+  { id: 'tune', label: '简历微调', shortLabel: '微调' },
+  { id: 'pack', label: '填写材料', shortLabel: '材料' },
+  { id: 'exports', label: '导出', shortLabel: '导出' },
 ];
-export function JobWorkspace({ data, initialTab, initialNotice }: { data: Data; initialTab?: string; initialNotice?: string }) {
-  const router=useRouter(); const job=data.job; const versions=data.versions as any[]; const base=versions.filter(v=>!v.jobId); const branches=versions.filter(v=>v.jobId===job.id); const safeInitialTab=workspaceTabs.some(item=>item.id===initialTab)?initialTab as WorkspaceTab:'job'; const noticeText=initialNotice==='ready'?'已自动匹配基础简历并生成修改建议，请逐条确认。':initialNotice==='no_resume'?'岗位已保存，但还没有可匹配的基础简历。导入简历后即可开始微调。':initialNotice==='ai_unavailable'?'岗位和简历匹配已完成，但 AI 尚未连接。请到“AI 设置”查看连接状态。':initialNotice==='tune_failed'?'岗位分析已完成，但修改建议生成失败。可以在下方重新生成。':''; const [tab,setTab]=useState<WorkspaceTab>(safeInitialTab); const [selected,setSelected]=useState(data.run?.resumeVersionId||base[0]?.id||''); const [busy,setBusy]=useState(''); const [message,setMessage]=useState(noticeText); const [error,setError]=useState(''); const [suggestions,setSuggestions]=useState<any[]>(data.suggestions||[]); const [drafts,setDrafts]=useState<Record<string,string>>({}); const [generatedVersion,setGeneratedVersion]=useState<{id:string;versionNumber:number}|null>(null); const autoFinalizeStarted=useRef(false); const analysis:JobAnalysis|null=useMemo(()=>{try{return job.analysisJson?JSON.parse(job.analysisJson):null}catch{return null}},[job.analysisJson]); const pack:ApplicationPackContent|null=useMemo(()=>{try{return data.pack?.contentJson?JSON.parse(data.pack.contentJson):null}catch{return null}},[data.pack]);
-  useEffect(()=>setSuggestions(data.suggestions||[]),[data.suggestions]);
-  useEffect(()=>{autoFinalizeStarted.current=false;setGeneratedVersion(null);setDrafts({});},[data.run?.id]);
-  const activeSuggestion=suggestions.find((item:any)=>item.state==='pending');
-  const processedSuggestions=suggestions.filter((item:any)=>item.state!=='pending');
-  const previewVersion=versions.find((item:any)=>item.id===(data.run?.resumeVersionId||selected))||base[0];
-  const previewContent=useMemo<ResumeContent|null>(()=>buildPreviewContent(previewVersion,suggestions,activeSuggestion,drafts),[previewVersion,suggestions,activeSuggestion,drafts]);
-  const existingOutput=data.run?.status==='finalized'?branches[0]:null;
-  const outputVersion=generatedVersion||existingOutput;
-  async function finalizeResume(){
-    setBusy('auto-finalize');setError('');setMessage('');
-    try{const response=await fetch(`/api/jobs/${job.id}/resume-versions`,{method:'POST'});const result=await response.json() as {error?:string;version?:{id:string;versionNumber:number}};if(!response.ok||!result.version)throw new Error(result.error||'生成岗位简历失败。');setGeneratedVersion(result.version);setMessage('岗位版简历已生成，可以立即导出。');router.refresh();}
-    catch(reason){setError(reason instanceof Error?reason.message:'生成岗位简历失败。');}
-    finally{setBusy('');}
+
+export function JobWorkspace({
+  data,
+  initialTab,
+  initialNotice,
+}: {
+  data: WorkspaceData;
+  initialTab?: string;
+  initialNotice?: string;
+}) {
+  const router = useRouter();
+  const { job, versions } = data;
+  const base = versions.filter((version) => !version.jobId);
+  const branches = versions.filter((version) => version.jobId === job.id);
+  const safeInitialTab = workspaceTabs.some((item) => item.id === initialTab) ? initialTab as WorkspaceTab : 'job';
+  const noticeText = getNotice(initialNotice);
+  const [tab, setTab] = useState<WorkspaceTab>(safeInitialTab);
+  const [selected, setSelected] = useState(data.run?.resumeVersionId || base[0]?.id || '');
+  const [busy, setBusy] = useState('');
+  const [message, setMessage] = useState(noticeText);
+  const [error, setError] = useState('');
+  const [suggestions, setSuggestions] = useState<WorkspaceSuggestion[]>(data.suggestions || []);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [generatedVersion, setGeneratedVersion] = useState<{ id: string; versionNumber: number } | null>(null);
+  const autoFinalizeStarted = useRef(false);
+
+  const analysis = useMemo<JobAnalysis | null>(() => {
+    try { return job.analysisJson ? JSON.parse(job.analysisJson) as JobAnalysis : null; } catch { return null; }
+  }, [job.analysisJson]);
+  const pack = useMemo<ApplicationPackContent | null>(() => {
+    try { return data.pack?.contentJson ? JSON.parse(data.pack.contentJson) as ApplicationPackContent : null; } catch { return null; }
+  }, [data.pack]);
+
+  const activeSuggestion = suggestions.find((item) => item.state === 'pending');
+  const processedSuggestions = suggestions.filter((item) => item.state !== 'pending');
+  const activeNumber = activeSuggestion ? suggestions.findIndex((item) => item.id === activeSuggestion.id) + 1 : suggestions.length;
+  const previewVersion = versions.find((item) => item.id === (data.run?.resumeVersionId || selected)) || base[0];
+  const previewContent = useMemo<ResumeContent | null>(
+    () => buildPreviewContent(previewVersion, suggestions, activeSuggestion, drafts),
+    [previewVersion, suggestions, activeSuggestion, drafts],
+  );
+  const existingOutput = data.run?.status === 'finalized' ? branches[0] : null;
+  const outputVersion = generatedVersion || existingOutput;
+
+  const finalizeResume = useCallback(async () => {
+    setBusy('auto-finalize');
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`/api/jobs/${job.id}/resume-versions`, { method: 'POST' });
+      const result = await response.json() as { error?: string; version?: { id: string; versionNumber: number } };
+      if (!response.ok || !result.version) throw new Error(result.error || '生成岗位简历失败。');
+      setGeneratedVersion(result.version);
+      setMessage('岗位版简历已生成，可以立即导出。');
+      router.refresh();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '生成岗位简历失败。');
+    } finally {
+      setBusy('');
+    }
+  }, [job.id, router]);
+
+  useEffect(() => {
+    if (!suggestions.length || suggestions.some((item) => item.state === 'pending') || data.run?.status !== 'ready' || autoFinalizeStarted.current) return;
+    autoFinalizeStarted.current = true;
+    void finalizeResume();
+  }, [data.run?.status, finalizeResume, suggestions]);
+
+  async function call(path: string, body?: unknown) {
+    setBusy(path);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: body ? { 'content-type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const result = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(result.error || '操作失败，请重试。');
+      setMessage('已完成，内容已更新。');
+      router.refresh();
+      return true;
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '操作失败，请重试。');
+      return false;
+    } finally {
+      setBusy('');
+    }
   }
-  useEffect(()=>{
-    if(!suggestions.length||suggestions.some((item:any)=>item.state==='pending')||data.run?.status!=='ready'||autoFinalizeStarted.current)return;
-    autoFinalizeStarted.current=true;void finalizeResume();
-  },[suggestions,data.run?.status,job.id,router]);
-  async function call(path:string,body?:unknown){setBusy(path);setError('');setMessage('');const response=await fetch(path,{method:'POST',headers:body?{'content-type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined});const result=await response.json() as any;setBusy('');if(!response.ok){setError(result.error||'操作失败');return false;}setMessage('已完成，内容已更新。');router.refresh();return true;}
-  async function status(value:string){const response=await fetch(`/api/jobs/${job.id}/status`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:value})});if(response.ok)router.refresh();}
-  return <div className="space-y-5 pb-24"><div className="flex flex-col gap-4 rounded-2xl border bg-white p-5 md:flex-row md:items-center md:justify-between"><div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground"><span>{job.company||'公司未识别'}</span><span>{job.role||'岗位未识别'}</span><span>{job.location||'地点未填写'}</span><span>{job.deadline?`截止 ${job.deadline}`:'截止时间未填写'}</span>{job.sourceUrl?<a className="text-primary" href={job.sourceUrl} target="_blank">打开官网 ↗</a>:null}</div><label className="flex items-center gap-2 text-sm">状态<select value={job.status} onChange={(e)=>status(e.target.value)} className="h-9 rounded-lg border bg-white px-3">{jobStatuses.map(s=><option key={s} value={s}>{jobStatusLabels[s]}</option>)}</select></label></div>
-    {error?<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>:null}{message?<p className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{message}</p>:null}
-    <div>
-      <div role="tablist" aria-label="岗位工作区" className="flex w-full gap-1 overflow-x-auto rounded-xl border bg-white p-1.5">
-        {workspaceTabs.map((item)=><button key={item.id} type="button" role="tab" aria-selected={tab===item.id} onClick={()=>setTab(item.id)} className={cn('shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition',tab===item.id?'bg-primary text-primary-foreground':'text-muted-foreground hover:bg-slate-100 hover:text-foreground')}>{item.label}</button>)}
-      </div>
-      {tab==='job'?<Panel title="岗位描述" action={null}><pre className="whitespace-pre-wrap font-sans text-sm leading-7 text-slate-700">{job.jd}</pre></Panel>:null}
-      {tab==='analysis'?<Panel title="岗位匹配分析" action={<ActionSetup base={base} selected={selected} setSelected={setSelected} label={analysis?'重新分析':'开始分析'} busy={busy.includes('analyze')} disabled={!selected} onClick={()=>call(`/api/jobs/${job.id}/analyze`,{resumeVersionId:selected})} />}>{analysis?<Analysis analysis={analysis}/>:<Empty text={base.length?'选择基础简历后，AI 会提取岗位要求、关键词、优势与缺口。':'请先到“简历版本”导入一份基础简历。'} />}</Panel>:null}
-      {tab==='tune'?<div className="mt-3 grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(420px,.92fr)]">
-        <div className="order-2 xl:order-1 xl:sticky xl:top-24"><ResumePreview content={previewContent} resumeName={previewVersion?.resumeName||'简历预览'} active={Boolean(activeSuggestion)} /></div>
-        <div className="order-1 space-y-4 xl:order-2">
-          <section className="rounded-2xl border bg-white p-4 sm:p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><h2 className="font-semibold">岗位定向修改</h2>{suggestions.length?<Badge variant="outline">{processedSuggestions.length} / {suggestions.length}</Badge>:null}</div><p className="mt-1 text-sm leading-6 text-muted-foreground">AI 可改写、合并、新增或删减内容；所有变动都受事实边界和单页篇幅约束，左侧同步预览。</p></div><ActionSetup base={base} selected={selected} setSelected={setSelected} label="重新生成" busy={busy.includes('/tune')} disabled={!selected} onClick={()=>call(`/api/jobs/${job.id}/tune`,{resumeVersionId:selected})} /></div>{suggestions.length?<div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-primary transition-all duration-500" style={{width:`${processedSuggestions.length/suggestions.length*100}%`}} /></div>:null}</section>
-          {activeSuggestion?<Suggestion key={activeSuggestion.id} suggestion={activeSuggestion} onDraft={(value)=>setDrafts(current=>({...current,[activeSuggestion.id]:value}))} onChange={(updates)=>setSuggestions(current=>current.map(item=>item.id===activeSuggestion.id?{...item,...updates}:item))} />:suggestions.length&&busy==='auto-finalize'?<section className="surface-card flex min-h-44 items-center justify-center p-6 text-center"><div><LoaderCircle className="mx-auto size-7 animate-spin text-primary"/><p className="mt-4 font-semibold">正在生成岗位版简历</p><p className="mt-1 text-sm text-muted-foreground">所有选择已确认，正在固化不可变版本。</p></div></section>:outputVersion?<ExportReady version={outputVersion}/>:suggestions.length?<section className="surface-card p-6 text-center"><Check className="mx-auto size-8 text-emerald-600"/><p className="mt-3 font-semibold">建议已全部处理</p><p className="mt-1 text-sm text-muted-foreground">如果没有自动生成，可以手动重试，已确认的建议不会丢失。</p><Button className="mt-4" onClick={finalizeResume}><FileDown/>生成岗位版简历</Button></section>:<Empty text="生成建议后，这里会一次展示一条修改；右侧编辑时，左侧简历会实时更新。" />}
-          {processedSuggestions.length?<details className="rounded-2xl border bg-white p-4"><summary className="cursor-pointer text-sm font-medium text-muted-foreground">查看已处理建议（{processedSuggestions.length}）</summary><div className="mt-3 space-y-2">{processedSuggestions.map((item:any)=><div key={item.id} className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3 text-sm"><p className="line-clamp-2 leading-6 text-slate-600">{parseSuggestionSection(item.sectionKey).operation==='delete'&&!item.editedText?`删除：${item.originalText}`:item.editedText||item.proposedText}</p><Badge variant={item.state==='accepted'?'secondary':'outline'}>{item.state==='accepted'?'已接受':'已拒绝'}</Badge></div>)}</div></details>:null}
+
+  async function updateStatus(value: string) {
+    const response = await fetch(`/api/jobs/${job.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: value }),
+    });
+    if (response.ok) router.refresh();
+    else setError('状态更新失败，请重试。');
+  }
+
+  return (
+    <div className="mx-auto max-w-[1420px] space-y-4">
+      <section className="workspace-panel flex flex-col gap-4 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-[#58657a]">
+          <Link href="/jobs" className="inline-flex items-center gap-1 font-medium text-primary hover:underline"><ChevronLeft className="size-4" />全部岗位</Link>
+          <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{job.location || '地点未填写'}</span>
+          <span className={cn('inline-flex items-center gap-1.5', !job.deadline && 'font-medium text-orange-700')}>
+            {!job.deadline ? <AlertTriangle className="size-4" /> : null}
+            {job.deadline ? `截止 ${job.deadline}` : '截止时间未填写'}
+          </span>
+          {job.sourceUrl ? <a className="font-medium text-primary hover:underline" href={job.sourceUrl} target="_blank" rel="noreferrer">打开岗位来源</a> : null}
         </div>
-      </div>:null}
-      {tab==='pack'?<div className="space-y-4"><Panel title="官网填写材料包" action={<Button onClick={()=>call(`/api/jobs/${job.id}/application-pack`)} disabled={busy.includes('application-pack')}>{busy.includes('application-pack')?'生成中…':pack?'从最新简历重新生成':'从简历生成材料包'}</Button>}>{pack?<PackView pack={pack}/>:<Empty text="自动读取该岗位最新简历，整理个人信息、教育、经历、项目和技能，并基于事实生成个人自我介绍与岗位动机。" />}</Panel>{pack?<CustomAnswer jobId={job.id} answers={data.answers||[]} onDone={()=>router.refresh()} />:null}</div>:null}
-      {tab==='exports'?<Panel title="岗位简历版本" action={null}>{branches.length?<div className="space-y-3">{branches.map(v=><div key={v.id} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{v.resumeName} · v{v.versionNumber}</p><p className="mt-1 text-xs text-muted-foreground">生成于 {new Date(v.createdAt).toLocaleString('zh-CN')} · 内容快照不可变</p></div><div className="flex flex-wrap gap-2"><a className={buttonVariants({variant:'outline',size:'sm'})} href={`/api/resume-versions/${v.id}/export?format=docx`}><FileDown /> DOCX</a><a className={buttonVariants({variant:'outline',size:'sm'})} target="_blank" rel="noreferrer" href={`/api/resume-versions/${v.id}/export?format=pdf`}><FileDown /> PDF</a><OverleafCopyButton versionId={v.id}/></div></div>)}</div>:<Empty text="确认全部微调建议并固化后，这里会出现可重复导出的版本。" />}</Panel>:null}
-    </div></div>;
-}
-function Panel({title,action,children}:{title:string;action:React.ReactNode;children:React.ReactNode}){return <section className="mt-3 rounded-2xl border bg-white p-5 sm:p-6"><div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h2 className="font-semibold">{title}</h2>{action}</div>{children}</section>}
-function ActionSetup({base,selected,setSelected,label,busy,disabled,onClick}:{base:any[];selected:string;setSelected:(v:string)=>void;label:string;busy:boolean;disabled:boolean;onClick:()=>void}){return <div className="flex flex-col gap-2 sm:flex-row"><select value={selected} onChange={e=>setSelected(e.target.value)} className="h-9 min-w-48 rounded-lg border bg-white px-3 text-sm"><option value="">选择基础简历</option>{base.map(v=><option key={v.id} value={v.id}>{v.resumeName} v{v.versionNumber}</option>)}</select><Button onClick={onClick} disabled={disabled||busy}><Sparkles />{busy?'处理中…':label}</Button></div>}
-function buildPreviewContent(version:any,suggestions:any[],active:any,drafts:Record<string,string>):ResumeContent|null{if(!version?.contentJson)return null;try{const raw=JSON.parse(version.contentJson) as ResumeContent;let content=normalizeResumeContent(raw,resumeContentToText(raw));for(const item of suggestions){if(item.state==='accepted')content=applyResumeSuggestion(content,item.sectionKey,item.originalText,item.editedText||item.proposedText);}if(active){const draft=drafts[active.id]??active.editedText??active.proposedText;content=applyResumeSuggestion(content,active.sectionKey,active.originalText,draft);}return content;}catch{return null;}}
-function ResumePreview({content,resumeName,active}:{content:ResumeContent|null;resumeName:string;active:boolean}){return <section className="overflow-hidden rounded-2xl border bg-[#d7d7d7] shadow-sm"><div className="flex items-center justify-between border-b border-slate-300/70 bg-white/90 px-4 py-3"><div><p className="text-sm font-semibold">实时简历预览</p><p className="mt-0.5 text-xs text-muted-foreground">{resumeName} · A4 单页自适应</p></div><span className={cn('flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs',active?'bg-emerald-50 text-emerald-700':'bg-slate-100 text-slate-600')}><i className={cn('size-1.5 rounded-full',active?'bg-emerald-500':'bg-slate-400')}/>{active?'实时更新':'最终效果'}</span></div><div className="max-h-[calc(100vh-170px)] overflow-y-auto p-3 sm:p-5">{content?<article className="mx-auto aspect-[210/297] w-full max-w-[720px] overflow-hidden bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black shadow-[0_12px_35px_-20px_rgba(15,23,42,.45)]"><img src="/resume-portrait.jpg" alt="" className="float-right ml-[5%] mb-2 aspect-[195/294] w-[11.2%] object-cover"/><h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>{content.summary?<p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{content.summary}</p>:null}<PreviewSection title={content.language==='zh'?'教育经历':'EDUCATION'} lines={content.education}/><PreviewEntries title={content.language==='zh'?'实习经历':'EXPERIENCE'} entries={content.experiences}/><PreviewEntries title={content.language==='zh'?'项目经历':'PROJECTS'} entries={content.projects}/><PreviewSection title={content.language==='zh'?'技能':'SKILLS'} lines={content.skills}/><PreviewSection title={content.language==='zh'?'其他信息':'ADDITIONAL'} lines={content.extras}/></article>:<div className="grid min-h-72 place-items-center rounded-xl border border-dashed border-slate-300 bg-white/60 text-sm text-muted-foreground">选择基础简历后显示预览</div>}</div></section>}
-function PreviewSection({title,lines}:{title:string;lines:string[]}){if(!lines.length)return null;return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none text-black">{title}</h2><div className="mt-[3px] space-y-0">{lines.map((line,index)=><p key={index} className="whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{line}</p>)}</div></section>}
-function PreviewEntries({title,entries}:{title:string;entries:ResumeContent['experiences']}){if(!entries.length)return null;return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none text-black">{title}</h2><div className="mt-[3px] space-y-[5px]">{entries.map((entry,index)=><div key={index}><div className="flex items-baseline justify-between gap-3"><p className="text-[11.5px] font-bold leading-[1.3]">{entry.heading}</p><p className="shrink-0 text-[9.5px] font-bold leading-[1.2]">{entry.meta}</p></div><ul className="mt-[1px] space-y-0">{entry.bullets.map((bullet,itemIndex)=><li key={itemIndex} className="flex gap-2 pl-0 text-[11px] leading-[1.35]"><span>-</span><span>{bullet}</span></li>)}</ul></div>)}</div></section>}
-function ExportReady({version}:{version:{id:string;versionNumber:number}}){return <section className="overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-cyan-50 p-5 sm:p-6"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-emerald-600 text-white"><Check className="size-5"/></span><div><h3 className="font-semibold text-emerald-950">岗位版简历已生成</h3><p className="mt-1 text-sm leading-6 text-emerald-800">v{version.versionNumber} 已固化为不可变快照，可以直接下载或之后重新导出。</p></div></div><div className="mt-5 grid gap-2 sm:grid-cols-3"><a data-interactive="true" className={buttonVariants({size:'lg'})} href={`/api/resume-versions/${version.id}/export?format=docx`}><FileDown/>下载 DOCX</a><a data-interactive="true" className={buttonVariants({variant:'outline',size:'lg'})} target="_blank" rel="noreferrer" href={`/api/resume-versions/${version.id}/export?format=pdf`}><FileDown/>打开 PDF 导出</a><OverleafCopyButton versionId={version.id} large className="w-full"/></div><p className="mt-3 text-xs leading-5 text-emerald-800">Overleaf：粘贴到现有 resume.cls 项目的 main.tex，并使用 XeLaTeX 编译；源码已收紧字号与间距，内容超长时会自动等比控制在一页。</p></section>}
-function Analysis({analysis}:{analysis:JobAnalysis}){return <div className="grid gap-5 lg:grid-cols-[180px_1fr]"><div className="rounded-2xl bg-[#eaf8f4] p-5 text-center"><p className="text-sm text-[#397264]">当前匹配度</p><p className="mt-2 text-5xl font-semibold text-[#0b7f64]">{analysis.score}</p><p className="mt-1 text-xs text-[#397264]">/ 100</p></div><div><p className="leading-7 text-slate-700">{analysis.summary}</p><div className="mt-5 grid gap-4 sm:grid-cols-2"><List title="已有优势" items={analysis.strengths}/><List title="待补缺口" items={analysis.gaps}/><List title="硬性要求" items={analysis.mustHave}/><List title="关键词" items={analysis.keywords}/></div></div></div>}
-function List({title,items}:{title:string;items:string[]}){return <div className="rounded-xl border p-4"><p className="font-medium">{title}</p><ul className="mt-3 space-y-2 text-sm leading-6 text-muted-foreground">{items.map((x,i)=><li key={i}>• {x}</li>)}</ul></div>}
-function Suggestion({suggestion:s,onChange,onDraft}:{suggestion:any;onChange:(updates:Record<string,unknown>)=>void;onDraft:(value:string)=>void}){
-  const target=parseSuggestionSection(s.sectionKey);
-  const actionLabel=target.operation==='append'?'新增':target.operation==='delete'?'删除':'改写';
-  const savedText=s.editedText||s.proposedText;
-  const [edit,setEdit]=useState(savedText);
-  const [busy,setBusy]=useState<''|'accepted'|'rejected'>('');
-  const [actionError,setActionError]=useState('');
-  const needsFact=Boolean(s.needsUserInput)&&edit.trim()===String(s.proposedText||'').trim();
-  async function update(state:'accepted'|'rejected'){
-    if(state==='accepted'&&needsFact){setActionError('这条建议缺少事实依据，请先在编辑框补充真实内容，再点击接受。');return;}
-    setBusy(state);setActionError('');
-    try{
-      const response=await fetch(`/api/suggestions/${s.id}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({state,editedText:edit})});
-      const result=await response.json().catch(()=>({})) as {error?:string};
-      if(!response.ok){setActionError(result.error||'保存失败，请重试。');return;}
-      onChange({state,editedText:edit});
-    }catch{setActionError('网络连接失败，请重试。');}
-    finally{setBusy('');}
-  }
-  function editText(value:string){setEdit(value);onDraft(value);setActionError('');if(s.state==='accepted')onChange({state:'pending'});}
-  return <article className={cn('page-enter rounded-2xl border p-4 transition sm:p-5',s.state==='accepted'&&'border-emerald-200 bg-emerald-50/20',s.state==='rejected'&&'bg-slate-50/60 opacity-80')}>
-    <div className="flex flex-wrap items-center justify-between gap-2"><Badge variant={s.needsUserInput?'destructive':'outline'}>{s.needsUserInput?'待补充事实':`${actionLabel} · ${target.label}`}</Badge><span aria-live="polite" className={cn('rounded-full px-2.5 py-1 text-xs font-medium',s.state==='accepted'?'bg-emerald-100 text-emerald-700':s.state==='rejected'?'bg-slate-200 text-slate-600':'bg-amber-50 text-amber-700')}>{s.state==='pending'?'待处理':s.state==='accepted'?'✓ 已接受':'已拒绝'}</span></div>
-    <div className="mt-4"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-medium text-muted-foreground">{target.operation==='append'?`将在“${target.label}”中新增`:target.operation==='delete'?`将从“${target.label}”中删除`:'修改对比'}</p><div className="flex gap-3 text-[11px] text-muted-foreground"><span><i className="mr-1 inline-block size-2 rounded-sm bg-red-100"/>删除</span><span><i className="mr-1 inline-block size-2 rounded-sm bg-emerald-200"/>新增</span></div></div><DiffHighlight before={s.originalText} after={edit}/></div>
-    <div className="mt-4"><p className="text-xs font-medium text-muted-foreground">{target.operation==='delete'?'留空即删除；也可填写替代文本，改为替换':'建议文本（可以继续编辑）'}</p><Textarea className="mt-2 min-h-28" value={edit} placeholder={target.operation==='delete'?'保持为空以删除这条内容':''} onChange={e=>editText(e.target.value)} /></div>
-    {s.needsUserInput?<p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">这条内容需要你补充真实信息；修改编辑框后即可接受。</p>:null}
-    <div className="mt-3 grid gap-2 text-sm leading-6 text-muted-foreground"><p><span className="font-medium text-foreground">理由：</span>{s.rationale}</p><p><span className="font-medium text-foreground">对应 JD：</span>{s.matchedRequirement}</p></div>
-    {actionError?<p role="alert" className="mt-3 text-sm text-red-600">{actionError}</p>:null}
-    <div className="mt-4 flex justify-end gap-2"><Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={()=>update('rejected')}><X />{busy==='rejected'?'保存中…':'拒绝'}</Button><Button size="sm" disabled={Boolean(busy)} onClick={()=>update('accepted')}><Check />{busy==='accepted'?'保存中…':s.state==='accepted'?'已接受':'接受'}{edit!==s.proposedText?'编辑稿':''}</Button></div>
-  </article>
+        <label className="flex items-center gap-2 text-sm font-medium">
+          状态
+          <select value={job.status} onChange={(event) => void updateStatus(event.target.value)} className="h-10 rounded-lg border bg-white px-3 text-sm">
+            {jobStatuses.map((status) => <option key={status} value={status}>{jobStatusLabels[status]}</option>)}
+          </select>
+        </label>
+      </section>
+
+      {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p> : null}
+      {message ? <p aria-live="polite" className="callout-success">{message}</p> : null}
+
+      <div className="workspace-panel overflow-hidden">
+        <div role="tablist" aria-label="岗位工作区" className="flex min-w-0 sm:min-w-[620px]">
+          {workspaceTabs.map((item, index) => {
+            const active = tab === item.id;
+            const completed = workspaceTabs.findIndex((entry) => entry.id === tab) > index;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(item.id)}
+                className={cn(
+                  'relative flex min-h-[66px] min-w-0 flex-1 flex-col items-center justify-center gap-1 border-r px-1.5 text-center last:border-r-0 sm:flex-row sm:justify-start sm:gap-3 sm:px-4 sm:text-left',
+                  active ? 'bg-[#f3f7ff] text-primary' : 'text-[#58657a] hover:bg-slate-50',
+                )}
+              >
+                <span className={cn(
+                  'grid size-7 shrink-0 place-items-center rounded-full border text-xs font-semibold',
+                  active && 'border-primary bg-primary text-white',
+                  completed && 'border-emerald-600 bg-emerald-600 text-white',
+                )}>{completed ? <Check className="size-4" /> : index + 1}</span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold sm:hidden">{item.shortLabel}</span>
+                  <span className="hidden text-sm font-semibold sm:block">{item.label}</span>
+                  <span className="mt-0.5 hidden text-xs text-muted-foreground sm:block">{index < 2 ? '准备与验证' : index === 2 ? '当前核心步骤' : '完成投递材料'}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {tab === 'job' ? (
+        <Panel title="岗位描述">
+          <pre className="max-w-[80ch] whitespace-pre-wrap font-sans text-[15px] leading-8 text-[#354057]">{job.jd}</pre>
+        </Panel>
+      ) : null}
+
+      {tab === 'analysis' ? (
+        <Panel
+          title="岗位匹配分析"
+          action={<ActionSetup base={base} selected={selected} setSelected={setSelected} label={analysis ? '重新分析' : '开始分析'} busy={busy.includes('analyze')} disabled={!selected} onClick={() => void call(`/api/jobs/${job.id}/analyze`, { resumeVersionId: selected })} />}
+        >
+          {analysis ? <Analysis analysis={analysis} /> : <Empty text={base.length ? '选择基础简历后，系统会整理岗位要求、关键词、优势与缺口。' : '请先到“简历”导入一份基础简历。'} action={!base.length ? { href: '/resumes', label: '导入基础简历' } : undefined} />}
+        </Panel>
+      ) : null}
+
+      {tab === 'tune' ? (
+        <div className="space-y-4">
+          <section className="workspace-panel flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <h2 className="font-semibold">简历微调</h2>
+                {analysis ? <span className="rounded-md bg-[#edf3ff] px-2.5 py-1 text-xs font-semibold text-primary">岗位匹配 {analysis.score}%</span> : null}
+                {suggestions.length ? <span className="text-xs font-medium text-muted-foreground">当前建议 {activeNumber} / {suggestions.length}</span> : null}
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">逐条核对证据与表述，接受后实时更新左侧简历。</p>
+            </div>
+            <ActionSetup base={base} selected={selected} setSelected={setSelected} label="重新生成" busy={busy.includes('/tune')} disabled={!selected} onClick={() => void call(`/api/jobs/${job.id}/tune`, { resumeVersionId: selected })} />
+          </section>
+
+          <MobileResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} />
+
+          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(400px,.72fr)]">
+            <div className="hidden xl:sticky xl:top-[88px] xl:block">
+              <ResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} />
+            </div>
+            <div className="space-y-4">
+              {activeSuggestion ? (
+                <Suggestion
+                  key={activeSuggestion.id}
+                  suggestion={activeSuggestion}
+                  current={activeNumber}
+                  total={suggestions.length}
+                  onDraft={(value) => setDrafts((current) => ({ ...current, [activeSuggestion.id]: value }))}
+                  onChange={(updates) => setSuggestions((current) => current.map((item) => item.id === activeSuggestion.id ? { ...item, ...updates } : item))}
+                />
+              ) : suggestions.length && busy === 'auto-finalize' ? (
+                <LoadingFinal />
+              ) : outputVersion ? (
+                <ExportReady version={outputVersion} />
+              ) : suggestions.length ? (
+                <section className="workspace-panel p-6 text-center">
+                  <Check className="mx-auto size-8 text-emerald-600" />
+                  <p className="mt-3 font-semibold">建议已全部处理</p>
+                  <p className="mt-1 text-sm text-muted-foreground">确认内容无误后，生成不可变的岗位版简历。</p>
+                  <Button className="mt-4" onClick={() => void finalizeResume()}><FileDown />生成岗位版简历</Button>
+                </section>
+              ) : (
+                <Empty text="选择基础简历并生成建议后，这里会一次展示一条修改。" action={!base.length ? { href: '/resumes', label: '导入基础简历' } : undefined} />
+              )}
+
+              {processedSuggestions.length ? (
+                <details className="workspace-panel overflow-hidden">
+                  <summary className="cursor-pointer list-none px-4 py-3.5 text-sm font-medium text-[#465166] [&::-webkit-details-marker]:hidden">
+                    已处理建议（{processedSuggestions.length}）
+                  </summary>
+                  <div className="divide-y border-t">
+                    {processedSuggestions.map((item) => (
+                      <div key={item.id} className="flex items-start justify-between gap-3 px-4 py-3 text-sm">
+                        <p className="line-clamp-2 leading-6 text-muted-foreground">{parseSuggestionSection(item.sectionKey).operation === 'delete' && !item.editedText ? `删除：${item.originalText}` : item.editedText || item.proposedText}</p>
+                        <Badge variant={item.state === 'accepted' ? 'secondary' : 'outline'}>{item.state === 'accepted' ? '已接受' : '已跳过'}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === 'pack' ? (
+        <div className="space-y-4">
+          <Panel title="官网填写材料包" action={<Button onClick={() => void call(`/api/jobs/${job.id}/application-pack`)} disabled={busy.includes('application-pack')}>{busy.includes('application-pack') ? '生成中…' : pack ? '从最新简历重新生成' : '从简历生成材料包'}</Button>}>
+            {pack ? <PackView pack={pack} /> : <Empty text="系统会读取该岗位最新简历，整理官网填写需要的个人信息、教育、经历、项目和技能。" />}
+          </Panel>
+          {pack ? <CustomAnswer jobId={job.id} answers={data.answers || []} onDone={() => router.refresh()} /> : null}
+        </div>
+      ) : null}
+
+      {tab === 'exports' ? (
+        <Panel title="岗位简历版本">
+          {branches.length ? (
+            <div className="divide-y rounded-lg border">
+              {branches.map((version) => (
+                <div key={version.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-medium">{version.resumeName} · v{version.versionNumber}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">生成于 {new Date(version.createdAt).toLocaleString('zh-CN')} · 内容快照不可变</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={`/api/resume-versions/${version.id}/export?format=docx`}><FileDown />DOCX</a>
+                    <a className={buttonVariants({ variant: 'outline', size: 'sm' })} target="_blank" rel="noreferrer" href={`/api/resume-versions/${version.id}/export?format=pdf`}><FileDown />PDF</a>
+                    <OverleafCopyButton versionId={version.id} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <Empty text="确认全部微调建议并生成岗位版简历后，这里会出现可重复导出的版本。" />}
+        </Panel>
+      ) : null}
+    </div>
+  );
 }
 
-type DiffPart={type:'same'|'add'|'remove';text:string};
-function DiffHighlight({before,after}:{before:string;after:string}){const parts=useMemo(()=>diffText(before,after),[before,after]);return <p className="mt-2 whitespace-pre-wrap rounded-xl border border-slate-100 bg-slate-50/80 p-3.5 text-sm leading-7 text-slate-700">{parts.map((part,index)=>part.type==='add'?<mark key={index} className="rounded bg-emerald-200/80 px-0.5 text-emerald-950">{part.text}</mark>:part.type==='remove'?<del key={index} className="rounded bg-red-100 px-0.5 text-red-700 decoration-red-400">{part.text}</del>:<span key={index}>{part.text}</span>)}</p>}
-function diffText(before:string,after:string):DiffPart[]{
-  if(before===after)return[{type:'same',text:before}];
-  const a=tokenize(before),b=tokenize(after);
-  if(a.length>320||b.length>320)return simpleDiff(before,after);
-  const rows=a.length+1,cols=b.length+1,table=Array.from({length:rows},()=>new Uint16Array(cols));
-  for(let i=a.length-1;i>=0;i--)for(let j=b.length-1;j>=0;j--)table[i][j]=a[i]===b[j]?table[i+1][j+1]+1:Math.max(table[i+1][j],table[i][j+1]);
-  const parts:DiffPart[]=[];let i=0,j=0;
-  const push=(type:DiffPart['type'],text:string)=>{const last=parts.at(-1);if(last?.type===type)last.text+=text;else parts.push({type,text});};
-  while(i<a.length&&j<b.length){if(a[i]===b[j]){push('same',a[i++]);j++;}else if(table[i+1][j]>=table[i][j+1])push('remove',a[i++]);else push('add',b[j++]);}
-  while(i<a.length)push('remove',a[i++]);while(j<b.length)push('add',b[j++]);return parts;
+function getNotice(notice?: string) {
+  if (notice === 'ready') return '已自动匹配基础简历并生成修改建议，请逐条确认。';
+  if (notice === 'no_resume') return '岗位已保存，但还没有可匹配的基础简历。导入后即可开始微调。';
+  if (notice === 'ai_unavailable') return '岗位和简历匹配已完成，但 AI 尚未连接。请到“AI 设置”检查连接。';
+  if (notice === 'tune_failed') return '岗位分析已完成，但修改建议生成失败。可以在下方重新生成。';
+  return '';
 }
-function tokenize(value:string){return value.match(/[\u3400-\u9fff]|[a-zA-Z0-9]+|\s+|[^\s\u3400-\u9fffa-zA-Z0-9]/g)||[];}
-function simpleDiff(before:string,after:string):DiffPart[]{let start=0;while(start<before.length&&start<after.length&&before[start]===after[start])start++;let aEnd=before.length,bEnd=after.length;while(aEnd>start&&bEnd>start&&before[aEnd-1]===after[bEnd-1]){aEnd--;bEnd--;}const parts:DiffPart[]=[{type:'same',text:before.slice(0,start)},{type:'remove',text:before.slice(start,aEnd)},{type:'add',text:after.slice(start,bEnd)},{type:'same',text:before.slice(aEnd)}];return parts.filter(part=>part.text);}
-function PackView({pack}:{pack:ApplicationPackContent}){const [copied,setCopied]=useState('');async function copy(id:string,value:string){await navigator.clipboard.writeText(value);setCopied(id);setTimeout(()=>setCopied(''),1200)}return <div className="space-y-5">{pack.missingFields.length?<div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900"><p className="font-medium">缺失 {pack.missingFields.length} 项</p><p className="mt-1 leading-6">{pack.missingFields.join('、')}</p></div>:null}{pack.groups.map(g=><section key={g.id}><div className="mb-2 flex items-center justify-between"><h3 className="font-medium">{g.title}</h3><button onClick={()=>copy(g.id,g.fields.map(f=>`${f.label}：${f.value}`).join('\n'))} className="text-xs text-primary">整组复制</button></div><div className="divide-y rounded-xl border">{g.fields.map(f=><div key={f.id} className="grid gap-2 p-4 sm:grid-cols-[150px_1fr_auto]"><div><p className="text-sm font-medium">{f.label}</p><p className="mt-1 text-xs text-muted-foreground">{f.source}</p></div><p className={f.missing?'text-amber-700':'whitespace-pre-wrap text-sm leading-6'}>{f.missing?'待补充':f.value}<span className="ml-2 text-xs text-muted-foreground">{f.value.length} 字</span></p><button disabled={f.missing} onClick={()=>copy(f.id,f.value)} className="h-fit text-xs text-primary disabled:text-slate-300"><Clipboard className="mr-1 inline size-3.5"/>{copied===f.id?'已复制':'复制'}</button></div>)}</div></section>)}</div>}
-function CustomAnswer({jobId,answers,onDone}:{jobId:string;answers:any[];onDone:()=>void}){const [question,setQuestion]=useState('');const [limit,setLimit]=useState('300');const [busy,setBusy]=useState(false);const [error,setError]=useState('');async function submit(){setBusy(true);setError('');const response=await fetch(`/api/jobs/${jobId}/custom-answers`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question,charLimit:limit?Number(limit):undefined})});const data=await response.json() as any;setBusy(false);if(!response.ok)return setError(data.error||'生成失败');setQuestion('');onDone();}return <Panel title="临时开放题" action={null}><div className="grid gap-3 sm:grid-cols-[1fr_130px_auto]"><Input value={question} onChange={e=>setQuestion(e.target.value)} placeholder="粘贴官网问题"/><Input value={limit} onChange={e=>setLimit(e.target.value)} type="number" min="20" max="5000" aria-label="字数限制"/><Button onClick={submit} disabled={busy||question.trim().length<3}>{busy?'生成中…':'生成答案'}</Button></div>{error?<p className="mt-3 text-sm text-destructive">{error}</p>:null}{answers.length?<div className="mt-5 space-y-3">{answers.map(a=><div key={a.id} className="rounded-xl border p-4"><p className="font-medium">{a.question}</p><p className="mt-2 whitespace-pre-wrap leading-6 text-slate-700">{a.answer}</p><button className="mt-3 text-xs text-primary" onClick={()=>navigator.clipboard.writeText(a.answer)}>复制答案 · {a.answer.length} 字{a.charLimit?` / ${a.charLimit}`:''}</button></div>)}</div>:null}</Panel>}
-function Empty({text}:{text:string}){return <div className="rounded-xl border border-dashed p-10 text-center text-sm leading-6 text-muted-foreground">{text}</div>}
+
+function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="workspace-panel p-5 sm:p-6">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="font-semibold">{title}</h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ActionSetup({
+  base,
+  selected,
+  setSelected,
+  label,
+  busy,
+  disabled,
+  onClick,
+}: {
+  base: WorkspaceVersion[];
+  selected: string;
+  setSelected: (value: string) => void;
+  label: string;
+  busy: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row">
+      <select value={selected} onChange={(event) => setSelected(event.target.value)} className="h-10 min-w-48 rounded-lg border bg-white px-3 text-sm">
+        <option value="">选择基础简历</option>
+        {base.map((version) => <option key={version.id} value={version.id}>{version.resumeName} v{version.versionNumber}</option>)}
+      </select>
+      <Button onClick={onClick} disabled={disabled || busy}><Sparkles />{busy ? '处理中…' : label}</Button>
+    </div>
+  );
+}
+
+function buildPreviewContent(
+  version: WorkspaceVersion | undefined,
+  suggestions: WorkspaceSuggestion[],
+  active: WorkspaceSuggestion | undefined,
+  drafts: Record<string, string>,
+): ResumeContent | null {
+  if (!version?.contentJson) return null;
+  try {
+    const raw = JSON.parse(version.contentJson) as ResumeContent;
+    let content = normalizeResumeContent(raw, resumeContentToText(raw));
+    for (const item of suggestions) {
+      if (item.state === 'accepted') content = applyResumeSuggestion(content, item.sectionKey, item.originalText, item.editedText || item.proposedText);
+    }
+    if (active) {
+      const draft = drafts[active.id] ?? active.editedText ?? active.proposedText;
+      content = applyResumeSuggestion(content, active.sectionKey, active.originalText, draft);
+    }
+    return content;
+  } catch {
+    return null;
+  }
+}
+
+function MobileResumePreview({ content, resumeName, active }: { content: ResumeContent | null; resumeName: string; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="xl:hidden">
+      <Button variant="outline" className="w-full" onClick={() => setOpen(true)}><Eye />查看实时简历预览</Button>
+      {open ? (
+        <dialog open className="fixed inset-0 z-50 m-0 h-dvh max-h-none w-screen max-w-none bg-[#edf1f6]" aria-label="实时简历预览">
+          <div className="flex h-14 items-center justify-between border-b bg-white px-4">
+            <p className="font-semibold">实时简历预览</p>
+            <Button size="sm" variant="outline" onClick={() => setOpen(false)}><X />关闭</Button>
+          </div>
+          <div className="h-[calc(100dvh-56px)] overflow-auto p-3"><ResumePreview content={content} resumeName={resumeName} active={active} embedded /></div>
+        </dialog>
+      ) : null}
+    </div>
+  );
+}
+
+function ResumePreview({ content, resumeName, active, embedded = false }: { content: ResumeContent | null; resumeName: string; active: boolean; embedded?: boolean }) {
+  return (
+    <section className={cn('overflow-hidden rounded-xl border bg-[#dfe3e8]', embedded && 'border-0')}>
+      <div className="flex items-center justify-between border-b bg-white px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold">基础简历：{resumeName}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">A4 预览 · 单页自适应</p>
+        </div>
+        <span className={cn('inline-flex items-center gap-2 text-xs font-medium', active ? 'text-emerald-700' : 'text-muted-foreground')}>
+          <span className={cn('status-dot', active ? 'bg-emerald-500' : 'bg-slate-400')} />
+          {active ? '实时更新' : '最终效果'}
+        </span>
+      </div>
+      <div className={cn('overflow-y-auto p-3 sm:p-5', embedded ? 'max-h-none' : 'max-h-[calc(100vh-185px)]')}>
+        {content ? (
+          <article className="mx-auto aspect-[210/297] w-full max-w-[760px] overflow-hidden bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black shadow-[0_10px_26px_-14px_rgb(15_23_42_/_40%)]">
+            <Image src="/resume-portrait.jpg" alt="" width={195} height={294} className="float-right mb-2 ml-[5%] aspect-[195/294] w-[11.2%] object-cover" />
+            <h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>
+            {content.summary ? <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{content.summary}</p> : null}
+            <PreviewSection title={content.language === 'zh' ? '教育经历' : 'EDUCATION'} lines={content.education} />
+            <PreviewEntries title={content.language === 'zh' ? '实习经历' : 'EXPERIENCE'} entries={content.experiences} />
+            <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} />
+            <PreviewSection title={content.language === 'zh' ? '技能' : 'SKILLS'} lines={content.skills} />
+            <PreviewSection title={content.language === 'zh' ? '其他信息' : 'ADDITIONAL'} lines={content.extras} />
+          </article>
+        ) : (
+          <div className="grid min-h-72 place-items-center rounded-lg border border-dashed border-slate-300 bg-white/60 px-6 text-center text-sm text-muted-foreground">选择基础简历后显示预览</div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PreviewSection({ title, lines }: { title: string; lines: string[] }) {
+  if (!lines.length) return null;
+  return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none">{title}</h2><div className="mt-[3px]">{lines.map((line, index) => <p key={index} className="whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{line}</p>)}</div></section>;
+}
+
+function PreviewEntries({ title, entries }: { title: string; entries: ResumeContent['experiences'] }) {
+  if (!entries.length) return null;
+  return (
+    <section className="mt-[7px]">
+      <h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none">{title}</h2>
+      <div className="mt-[3px] space-y-[5px]">
+        {entries.map((entry, index) => (
+          <div key={index}>
+            <div className="flex items-baseline justify-between gap-3"><p className="text-[11.5px] font-bold leading-[1.3]">{entry.heading}</p><p className="shrink-0 text-[9.5px] font-bold leading-[1.2]">{entry.meta}</p></div>
+            <ul className="mt-[1px]">{entry.bullets.map((bullet, itemIndex) => <li key={itemIndex} className="flex gap-2 text-[11px] leading-[1.35]"><span aria-hidden="true">–</span><span>{bullet}</span></li>)}</ul>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Suggestion({
+  suggestion,
+  onChange,
+  onDraft,
+  current,
+  total,
+}: {
+  suggestion: WorkspaceSuggestion;
+  onChange: (updates: Partial<WorkspaceSuggestion>) => void;
+  onDraft: (value: string) => void;
+  current: number;
+  total: number;
+}) {
+  const target = parseSuggestionSection(suggestion.sectionKey);
+  const actionLabel = target.operation === 'append' ? '新增' : target.operation === 'delete' ? '删除' : '改写';
+  const savedText = suggestion.editedText || suggestion.proposedText;
+  const [edit, setEdit] = useState(savedText);
+  const [busy, setBusy] = useState<'' | 'accepted' | 'rejected'>('');
+  const [actionError, setActionError] = useState('');
+  const needsFact = Boolean(suggestion.needsUserInput) && edit.trim() === String(suggestion.proposedText || '').trim();
+
+  async function update(state: 'accepted' | 'rejected') {
+    if (state === 'accepted' && needsFact) {
+      setActionError('这条建议缺少事实依据。请先补充真实内容，再点击接受。');
+      return;
+    }
+    setBusy(state);
+    setActionError('');
+    try {
+      const response = await fetch(`/api/suggestions/${suggestion.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ state, editedText: edit }),
+      });
+      const result = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(result.error || '保存失败，请重试。');
+      onChange({ state, editedText: edit });
+    } catch (reason) {
+      setActionError(reason instanceof Error ? reason.message : '网络连接失败，请重试。');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  function editText(value: string) {
+    setEdit(value);
+    onDraft(value);
+    setActionError('');
+    if (suggestion.state === 'accepted') onChange({ state: 'pending' });
+  }
+
+  return (
+    <article className="workspace-panel overflow-hidden">
+      <header className="flex items-center justify-between border-b px-5 py-4">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">当前建议 {current} / {total}</p>
+          <h3 className="mt-1 font-semibold">{actionLabel} · {target.label}</h3>
+        </div>
+        <div className="flex items-center gap-1">
+          <button type="button" disabled className="grid size-9 place-items-center rounded-lg border text-slate-300" aria-label="上一条建议"><ChevronLeft className="size-4" /></button>
+          <button type="button" disabled className="grid size-9 place-items-center rounded-lg border text-slate-300" aria-label="下一条建议"><ChevronRight className="size-4" /></button>
+        </div>
+      </header>
+
+      <div className="space-y-5 p-5">
+        <section>
+          <p className="text-xs font-semibold text-muted-foreground">来自岗位要求</p>
+          <p className="mt-2 rounded-lg border border-blue-200 bg-[#f5f8ff] px-3.5 py-3 text-sm leading-6 text-[#244579]">{suggestion.matchedRequirement}</p>
+        </section>
+
+        {suggestion.originalText ? (
+          <section>
+            <p className="text-xs font-semibold text-muted-foreground">当前简历表述</p>
+            <p className="mt-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm leading-6 text-[#58657a]">{suggestion.originalText}</p>
+          </section>
+        ) : null}
+
+        <section>
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">建议修改（可编辑）</label>
+            <span className="text-xs tabular-nums text-muted-foreground">{edit.length} 字</span>
+          </div>
+          <Textarea
+            id={`suggestion-${suggestion.id}`}
+            className="mt-2 min-h-36 border-primary/35 bg-white text-sm leading-7"
+            value={edit}
+            placeholder={target.operation === 'delete' ? '保持为空以删除这条内容' : ''}
+            onChange={(event) => editText(event.target.value)}
+          />
+        </section>
+
+        <details className="rounded-lg border">
+          <summary className="cursor-pointer list-none px-3.5 py-3 text-sm font-medium text-[#465166] [&::-webkit-details-marker]:hidden">查看修改理由</summary>
+          <p className="border-t px-3.5 py-3 text-sm leading-6 text-muted-foreground">{suggestion.rationale}</p>
+        </details>
+
+        {suggestion.needsUserInput ? <p className="callout-warning">这条内容需要你补充真实信息；编辑后即可接受。</p> : null}
+        {actionError ? <p role="alert" className="text-sm text-red-700">{actionError}</p> : null}
+      </div>
+
+      <footer className="grid gap-2 border-t bg-[#fbfcfe] p-4 sm:grid-cols-[1fr_1.6fr]">
+        <Button variant="outline" size="lg" disabled={Boolean(busy)} onClick={() => void update('rejected')}>
+          <X />{busy === 'rejected' ? '保存中…' : '跳过'}
+        </Button>
+        <Button size="lg" disabled={Boolean(busy)} onClick={() => void update('accepted')}>
+          <Check />{busy === 'accepted' ? '保存中…' : '接受修改'}
+        </Button>
+      </footer>
+    </article>
+  );
+}
+
+function LoadingFinal() {
+  return (
+    <section className="workspace-panel flex min-h-44 items-center justify-center p-6 text-center" aria-live="polite">
+      <div>
+        <LoaderCircle className="mx-auto size-7 animate-spin text-primary" />
+        <p className="mt-4 font-semibold">正在生成岗位版简历</p>
+        <p className="mt-1 text-sm text-muted-foreground">所有选择已确认，正在固化不可变版本。</p>
+      </div>
+    </section>
+  );
+}
+
+function ExportReady({ version }: { version: { id: string; versionNumber: number } }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-emerald-200 bg-emerald-50 p-5 sm:p-6">
+      <div className="flex items-start gap-3">
+        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-emerald-600 text-white"><Check className="size-5" /></span>
+        <div>
+          <h3 className="font-semibold text-emerald-950">岗位版简历已生成</h3>
+          <p className="mt-1 text-sm leading-6 text-emerald-900">v{version.versionNumber} 已固化为不可变快照，可立即下载或之后重新导出。</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-2 sm:grid-cols-3">
+        <a data-interactive="true" className={buttonVariants({ size: 'lg' })} href={`/api/resume-versions/${version.id}/export?format=docx`}><FileDown />下载 DOCX</a>
+        <a data-interactive="true" className={buttonVariants({ variant: 'outline', size: 'lg' })} target="_blank" rel="noreferrer" href={`/api/resume-versions/${version.id}/export?format=pdf`}><FileDown />打开 PDF</a>
+        <OverleafCopyButton versionId={version.id} large className="w-full" />
+      </div>
+    </section>
+  );
+}
+
+function Analysis({ analysis }: { analysis: JobAnalysis }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="rounded-lg border bg-[#f5f8ff] p-5">
+        <p className="text-sm text-muted-foreground">当前匹配度</p>
+        <p className="mt-3 text-5xl font-semibold tracking-[-0.05em] text-primary">{analysis.score}<span className="ml-1 text-lg">%</span></p>
+        <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, analysis.score))}%` }} /></div>
+      </div>
+      <div>
+        <p className="max-w-[75ch] leading-7 text-[#354057]">{analysis.summary}</p>
+        <div className="mt-6 grid gap-x-6 gap-y-5 sm:grid-cols-2">
+          <AnalysisList title="已有优势" items={analysis.strengths} tone="success" />
+          <AnalysisList title="待补缺口" items={analysis.gaps} tone="warning" />
+          <AnalysisList title="硬性要求" items={analysis.mustHave} />
+          <AnalysisList title="关键词" items={analysis.keywords} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnalysisList({ title, items, tone = 'neutral' }: { title: string; items: string[]; tone?: 'neutral' | 'success' | 'warning' }) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <ul className="mt-2 divide-y rounded-lg border">
+        {items.map((item, index) => (
+          <li key={index} className="flex gap-2.5 px-3.5 py-2.5 text-sm leading-6 text-muted-foreground">
+            <span className={cn('mt-2 status-dot', tone === 'success' ? 'bg-emerald-500' : tone === 'warning' ? 'bg-orange-500' : 'bg-primary')} />
+            {item}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function PackView({ pack }: { pack: ApplicationPackContent }) {
+  const [copied, setCopied] = useState('');
+  async function copy(id: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopied(id);
+    window.setTimeout(() => setCopied(''), 1200);
+  }
+  return (
+    <div className="space-y-6">
+      {pack.missingFields.length ? <div className="callout-warning"><p className="font-medium">还缺少 {pack.missingFields.length} 项信息</p><p>{pack.missingFields.join('、')}</p></div> : null}
+      {pack.groups.map((group) => (
+        <section key={group.id}>
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="font-medium">{group.title}</h3>
+            <button type="button" onClick={() => void copy(group.id, group.fields.map((field) => `${field.label}：${field.value}`).join('\n'))} className="min-h-10 px-2 text-sm font-medium text-primary hover:underline">整组复制</button>
+          </div>
+          <div className="divide-y rounded-lg border">
+            {group.fields.map((field) => (
+              <div key={field.id} className="grid gap-2 p-4 sm:grid-cols-[150px_1fr_auto]">
+                <div><p className="text-sm font-medium">{field.label}</p><p className="mt-1 text-xs text-muted-foreground">{field.source}</p></div>
+                <p className={field.missing ? 'text-sm text-orange-700' : 'whitespace-pre-wrap text-sm leading-6'}>{field.missing ? '待补充' : field.value}<span className="ml-2 text-xs text-muted-foreground">{field.value.length} 字</span></p>
+                <button type="button" disabled={field.missing} onClick={() => void copy(field.id, field.value)} className="min-h-10 px-2 text-sm font-medium text-primary disabled:text-slate-300"><Clipboard className="mr-1 inline size-4" />{copied === field.id ? '已复制' : '复制'}</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function CustomAnswer({ jobId, answers, onDone }: { jobId: string; answers: AnswerRecord[]; onDone: () => void }) {
+  const [question, setQuestion] = useState('');
+  const [limit, setLimit] = useState('300');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/custom-answers`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ question, charLimit: limit ? Number(limit) : undefined }),
+      });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error || '生成失败，请重试。');
+      setQuestion('');
+      onDone();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '生成失败，请重试。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Panel title="临时开放题">
+      <div className="grid gap-3 sm:grid-cols-[1fr_130px_auto]">
+        <Input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="粘贴官网问题" aria-label="官网问题" />
+        <Input value={limit} onChange={(event) => setLimit(event.target.value)} type="number" min="20" max="5000" aria-label="字数限制" />
+        <Button onClick={() => void submit()} disabled={busy || question.trim().length < 3}>{busy ? '生成中…' : '生成答案'}</Button>
+      </div>
+      {error ? <p role="alert" className="mt-3 text-sm text-destructive">{error}</p> : null}
+      {answers.length ? (
+        <div className="mt-5 divide-y rounded-lg border">
+          {answers.map((answer) => (
+            <div key={answer.id} className="p-4">
+              <p className="font-medium">{answer.question}</p>
+              <p className="mt-2 whitespace-pre-wrap leading-6 text-[#354057]">{answer.answer}</p>
+              <button type="button" className="mt-3 min-h-10 text-sm font-medium text-primary" onClick={() => void navigator.clipboard.writeText(answer.answer)}>复制答案 · {answer.answer.length} 字{answer.charLimit ? ` / ${answer.charLimit}` : ''}</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </Panel>
+  );
+}
+
+function Empty({ text, action }: { text: string; action?: { href: string; label: string } }) {
+  return (
+    <div className="rounded-lg border border-dashed px-6 py-12 text-center text-sm leading-6 text-muted-foreground">
+      <p>{text}</p>
+      {action ? <Link href={action.href} className="mt-3 inline-flex min-h-10 items-center font-semibold text-primary hover:underline">{action.label}<ChevronRight className="size-4" /></Link> : null}
+    </div>
+  );
+}

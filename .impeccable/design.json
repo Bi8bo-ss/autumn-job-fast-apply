@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-07T00:00:00+08:00",
+  "title": "Design System: 秋招速投",
+  "extensions": {
+    "colorMeta": {
+      "cobalt-action": { "role": "primary", "displayName": "行动钴蓝", "canonical": "#155eef", "tonalRamp": ["#08245f", "#0d3b9d", "#155eef", "#5688f5", "#8fb1fa", "#c7d8fd", "#e6efff", "#f5f8ff"] },
+      "cool-canvas": { "role": "neutral", "displayName": "冷静画布", "canonical": "#f6f8fb", "tonalRamp": ["#1f2732", "#3b4655", "#647084", "#909aaa", "#bcc4cf", "#dde3ec", "#eef2f7", "#f6f8fb"] },
+      "orange-reminder": { "role": "secondary", "displayName": "提醒橙", "canonical": "#f97316", "tonalRamp": ["#4b1d05", "#813308", "#c14d0c", "#f97316", "#fb9b59", "#fdc59f", "#fee5d2", "#fff7ed"] },
+      "green-success": { "role": "secondary", "displayName": "完成绿", "canonical": "#16a56a", "tonalRamp": ["#063b27", "#086342", "#0d8657", "#16a56a", "#55c391", "#91dcb8", "#c7efdc", "#edfbf4"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "页面标题", "purpose": "页面与当前任务标题。" },
+      "body": { "displayName": "业务正文", "purpose": "JD、证据、说明和表单内容。" },
+      "label": { "displayName": "控件标签", "purpose": "字段、状态和导航。" }
+    },
+    "shadows": [
+      { "name": "ambient-panel", "value": "0 1px 2px rgb(23 32 51 / 4%)", "purpose": "静态工作台面板的最低限度分层。" },
+      { "name": "floating-action", "value": "0 10px 30px -18px rgb(15 23 42 / 38%)", "purpose": "粘性保存条和浮层。" }
+    ],
+    "motion": [
+      { "name": "state-transition", "value": "150ms ease", "purpose": "按钮、列表与选择状态。" },
+      { "name": "page-enter", "value": "180ms cubic-bezier(0.22, 1, 0.36, 1)", "purpose": "页面内容进入；reduced-motion 时关闭。" }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "当前任务的唯一主操作。",
+      "html": "<button class=\"ds-button-primary\">继续下一步</button>",
+      "css": ".ds-button-primary{height:44px;padding:0 16px;border:0;border-radius:8px;background:#155eef;color:#fff;font:600 14px 'Noto Sans SC',sans-serif;transition:background-color 150ms ease,transform 150ms ease}.ds-button-primary:hover{background:#0f50d4}.ds-button-primary:focus-visible{outline:3px solid rgb(21 94 239 / 24%);outline-offset:2px}.ds-button-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "用于事实信息和岗位内容的标准输入。",
+      "html": "<input class=\"ds-input\" aria-label=\"岗位名称\" placeholder=\"请输入岗位名称\">",
+      "css": ".ds-input{height:44px;width:280px;padding:0 12px;border:1px solid #cfd7e3;border-radius:8px;background:#fff;color:#172033;font:400 15px 'Noto Sans SC',sans-serif}.ds-input:hover{border-color:#aeb9c8}.ds-input:focus-visible{border-color:#155eef;outline:3px solid rgb(21 94 239 / 15%)}"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "description": "桌面侧栏的当前路由。",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-item\" href=\"#\">岗位</a></nav>",
+      "css": ".ds-nav{width:190px;padding:8px;background:#fff}.ds-nav-item{display:flex;align-items:center;min-height:44px;padding:0 12px;border-radius:8px;background:#edf3ff;color:#155eef;text-decoration:none;font:600 14px 'Noto Sans SC',sans-serif}.ds-nav-item:hover{background:#e4edff}.ds-nav-item:focus-visible{outline:3px solid rgb(21 94 239 / 24%);outline-offset:2px}"
+    },
+    {
+      "name": "Status Chip",
+      "kind": "chip",
+      "description": "紧凑表达投递状态，文字不依赖颜色。",
+      "html": "<span class=\"ds-chip\"><span class=\"ds-chip-dot\"></span>待投递</span>",
+      "css": ".ds-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:8px;background:#f0f3f7;color:#354057;font:500 12px 'Noto Sans SC',sans-serif}.ds-chip-dot{width:8px;height:8px;border-radius:999px;background:#155eef}"
+    },
+    {
+      "name": "Workspace Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "承载一个连续任务或一组紧密相关信息。",
+      "html": "<section class=\"ds-panel\"><h3>当前建议</h3><p>核对证据后再接受修改。</p></section>",
+      "css": ".ds-panel{width:320px;padding:16px;border:1px solid #dde3ec;border-radius:12px;background:#fff;color:#172033;box-shadow:0 1px 2px rgb(23 32 51 / 4%);font:400 15px/1.7 'Noto Sans SC',sans-serif}.ds-panel h3{margin:0 0 8px;font-size:16px;font-weight:600}.ds-panel p{margin:0;color:#647084}"
+    }
+  ],
+  "narrative": {
+    "northStar": "清醒的求职作战台",
+    "overview": "秋招速投采用冷静、克制、信息密度适中的工作台语言。界面首先回答这个岗位下一步做什么，再提供证据、内容和设置。",
+    "keyCharacteristics": ["冷白画布上的白色任务表面", "钴蓝只标记当前状态与主动作", "橙色提醒、绿色完成，各司其职", "细边框、弱阴影、紧凑侧栏和可扫描列表"],
+    "rules": [
+      { "name": "One Blue Voice", "body": "单个区域最多保留一个主蓝色动作；同层级次要操作使用描边或文字样式。", "section": "colors" },
+      { "name": "Task Before Drama", "body": "字号差异保持克制，用信息顺序、间距和字重表达层级。", "section": "typography" },
+      { "name": "Flat by Default", "body": "静态内容不靠悬浮感争夺注意力。", "section": "elevation" }
+    ],
+    "dos": ["Do 让每屏首先暴露当前最重要的下一步。", "Do 对加载、空白、错误、保存和回滚提供明确反馈。", "Do 在真实业务数据较少时使用诚实空状态，不制造指标。", "Do 为移动端保留至少 44px 的核心触控目标并遵守 reduced-motion。"],
+    "donts": ["Don't 使用装饰性渐变、英文全大写眉题或无任务价值的 Hero。", "Don't 把每条列表项包装成独立悬浮卡片。", "Don't 自动导入工作区里的个人文件，也不要在 AI 文案中编造成果。", "Don't 让固定导航或保存操作遮住正文与最后一个字段。"]
+  }
+}

@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-control-regex -- Resume normalization intentionally strips control characters. */
 import type { ResumeContent } from './product-types';
 
 type Language = ResumeContent['language'];

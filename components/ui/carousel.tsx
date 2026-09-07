@@ -1,4 +1,5 @@
 'use client';
+/* oxlint-disable react/react-compiler, jsx-a11y/prefer-tag-over-role -- Embla synchronizes imperative state and requires carousel ARIA roles. */
 
 import * as React from 'react';
 import useEmblaCarousel, {

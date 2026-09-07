@@ -151,7 +151,7 @@ export const jobInputSchema = z.object({
   role: z.string().trim().min(1, '请填写岗位名称').max(160),
   location: z.string().trim().max(120).default(''),
   jd: z.string().trim().min(30, '岗位描述至少需要 30 个字').max(40_000),
-  sourceUrl: z.union([z.literal(''), z.string().url('请输入有效链接')]).default(''),
+  sourceUrl: z.union([z.literal(''), z.url('请输入有效链接')]).default(''),
   deadline: z.string().default(''),
   language: z.enum(['zh', 'en']).default('zh'),
   resumeVersionId: z.string().optional(),

@@ -1,3 +1,4 @@
+/* oxlint-disable eslint/no-control-regex, typescript/no-misused-spread -- Export intentionally measures Unicode and control ranges. */
 import {
   BorderStyle,
   Document,
