@@ -8,9 +8,9 @@ import type {
   ResumeContent,
 } from '@/lib/product-types';
 import {
-  canDeleteResumeText,
+  canEditResumeText,
+  normalizeSuggestedResumeText,
   resumeContainsExactText,
-  resumeContainsText,
   type ResumeSuggestionOperation,
   type ResumeSuggestionSection,
 } from '@/lib/resume-suggestions';
@@ -282,6 +282,9 @@ export async function tuneResumeWithAi({
       '如果候选人事实库明确提供了证据，才可以新增更具体的技能或行业陈述。JD 中的要求本身绝不是候选人事实。',
       '禁止编造或夸大经历、职责、项目、技能、数字和成果；没有证据的“熟悉、精通、具备经验、负责过”等表述必须 needsUserInput=true，并明确提示用户补充。',
       'operation=replace 时，originalText 必须逐字引用结构化简历中一段完整的现有文本；可用于 summary、experience、project、skills、extras。',
+      'experience 和 project 的 proposedText 必须是一条完整的纯文本要点：不换行、不带项目符号、不使用 Markdown 或 LaTeX。不得把一条要点拆成多条。',
+      '经历与项目要点优先用行动动词开头，不要为了显得专业而新造“指标体系：”“提效赋能：”“跨域协同：”等概括标签。原文已有短标签时保留原标签，不要改成另一套标签。',
+      '同一段经历避免重复描述相同任务、指标和结果。单条中文建议尽量控制在 45 至 110 字，英文建议尽量控制在 18 至 40 词；信息过多时先合并重复内容或提出删除建议。',
       'operation=append 时，只能使用 skills 或 extras，originalText 必须为空字符串，proposedText 是要新增的一整行；最多给 2 条 append 建议，并优先保持单页篇幅。',
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
       '允许用一条 replace 加一条 delete 完成合并：先把有效信息并入保留项，再删除重复项。不得因为 JD 没提某项就机械删除；只有删除后能明显提升岗位针对性或信息密度时才建议删除。',
@@ -299,9 +302,20 @@ export async function tuneResumeWithAi({
   const suggestions = result.suggestions.filter((suggestion) => {
     const operation = suggestion.operation as ResumeSuggestionOperation;
     const section = suggestion.sectionKey as ResumeSuggestionSection;
-    suggestion.proposedText = suggestion.proposedText.trim();
+    suggestion.proposedText = normalizeSuggestedResumeText(
+      section,
+      suggestion.originalText,
+      suggestion.proposedText,
+    );
     if (operation !== 'delete' && !suggestion.proposedText) return false;
+    if (operation !== 'delete' && suggestion.proposedText === suggestion.originalText.trim()) return false;
     if (/\[(?:邮箱|手机号|证件号|敏感字段)已隐藏\]/.test(suggestion.proposedText)) return false;
+    if ((section === 'experience' || section === 'project')) {
+      const proposalLength = content.language === 'zh'
+        ? suggestion.proposedText.length
+        : suggestion.proposedText.split(/\s+/).filter(Boolean).length;
+      if (proposalLength > (content.language === 'zh' ? 140 : 55)) return false;
+    }
     if (operation === 'append') {
       suggestion.originalText = '';
       if (section !== 'skills' && section !== 'extras') return false;
@@ -313,8 +327,15 @@ export async function tuneResumeWithAi({
       suggestion.proposedText = '';
       if (!suggestion.originalText
         || !resumeContainsExactText(content, suggestion.originalText)
-        || !canDeleteResumeText(content, section, suggestion.originalText)) return false;
-    } else if (!suggestion.originalText || !resumeContainsText(content, suggestion.originalText)) {
+        || !canEditResumeText(content, section, suggestion.originalText)) return false;
+    } else if (!suggestion.originalText
+      || !resumeContainsExactText(content, suggestion.originalText)
+      || !canEditResumeText(content, section, suggestion.originalText)) {
+      return false;
+    }
+    if (operation === 'replace'
+      && suggestion.proposedText !== suggestion.originalText
+      && resumeContainsExactText(content, suggestion.proposedText)) {
       return false;
     }
     const key = `${operation}:${section}:${suggestion.originalText}:${suggestion.proposedText}`;

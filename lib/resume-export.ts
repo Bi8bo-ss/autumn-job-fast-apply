@@ -69,8 +69,7 @@ function htmlSection(title: string, body: string) {
 }
 
 function htmlBullet(value: string) {
-  const { lead, rest } = splitLead(value);
-  return `<li>${lead ? `<strong>${esc(lead)}</strong> ` : ''}${esc(rest)}</li>`;
+  return `<li>${esc(value)}</li>`;
 }
 
 function htmlEntries(values: ResumeContent['experiences']) {
@@ -113,15 +112,17 @@ function tex(value: string) {
   return [...value].map((char) => LATEX_ESCAPES[char] ?? (char === '\n' ? '\\\\\n' : char)).join('');
 }
 
-function texLine(value: string) {
-  const { lead, rest } = splitLead(value);
+function texLine(value: string, emphasizeLead = true) {
+  const { lead, rest } = emphasizeLead
+    ? splitLead(value)
+    : { lead: '', rest: value };
   return `${lead ? `\\textbf{${tex(lead)}} ` : ''}${tex(rest)}`;
 }
 
-function texContent(values: string[]) {
+function texContent(values: string[], emphasizeLead = true) {
   if (!values.length) return '';
   return `\\Content{
-${values.map((value) => `  \\item{${texLine(value)}}`).join('\n')}
+${values.map((value) => `  \\item{${texLine(value, emphasizeLead)}}`).join('\n')}
 }`;
 }
 
@@ -129,7 +130,7 @@ function texEntry(heading: string, meta: string, bullets: string[]) {
   return `\\datedsubsection{
   \\textbf{${tex(heading)}}
 }{${tex(meta)}}${bullets.length ? `
-${texContent(bullets)}` : ''}`;
+${texContent(bullets, false)}` : ''}`;
 }
 
 function texSection(title: string, body: string) {
@@ -263,8 +264,10 @@ function entryHeader(heading: string, meta: string, scale: number) {
   });
 }
 
-function bodyParagraph(value: string, scale: number, bullet = false) {
-  const { lead, rest } = splitLead(value);
+function bodyParagraph(value: string, scale: number, bullet = false, emphasizeLead = true) {
+  const { lead, rest } = emphasizeLead
+    ? splitLead(value)
+    : { lead: '', rest: value };
   const size = Math.max(13, Math.round(17 * scale));
   return new Paragraph({
     children: [new TextRun({ text: bullet ? '- ' : '', size }), ...(lead ? [new TextRun({ text: `${lead} `, bold: true, size })] : []), new TextRun({ text: rest, size })],
@@ -305,7 +308,7 @@ export function buildResumeDocument(content: ResumeContent, portrait: Uint8Array
     children.push(sectionHeading(title, scale));
     for (const entry of values) {
       children.push(entryHeader(entry.heading, entry.meta, scale));
-      for (const bullet of entry.bullets) children.push(bodyParagraph(bullet, scale, true));
+      for (const bullet of entry.bullets) children.push(bodyParagraph(bullet, scale, true, false));
     }
   };
   if (content.summary && !isContactLine(content.summary)) addLines(section.summary, [content.summary]);
