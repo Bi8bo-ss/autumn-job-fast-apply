@@ -45,6 +45,12 @@ const applicationNarrativesSchema = z.object({
   motivation: z.string(),
 });
 
+const jobMetadataSchema = z.object({
+  company: z.string().max(120),
+  role: z.string().max(160),
+  location: z.string().max(120),
+});
+
 const customAnswerSchema = z.object({
   answer: z.string(),
 });
@@ -114,6 +120,16 @@ const JSON_SCHEMAS = {
     properties: {
       selfIntroduction: { type: 'string' },
       motivation: { type: 'string' },
+    },
+  },
+  jobMetadata: {
+    type: 'object',
+    additionalProperties: false,
+    required: ['company', 'role', 'location'],
+    properties: {
+      company: { type: 'string', maxLength: 120 },
+      role: { type: 'string', maxLength: 160 },
+      location: { type: 'string', maxLength: 120 },
     },
   },
   customAnswer: {
@@ -215,6 +231,31 @@ export async function analyzeJobWithAi({
       '使用岗位描述所用的语言，表达简洁。',
     ].join('\n'),
     `【岗位描述】\n${sanitizeForAi(jd)}\n\n【简历正文】\n${sanitizeForAi(resumeText)}`,
+    settings,
+  );
+}
+
+export async function extractJobMetadataWithAi({
+  jd,
+  settings,
+}: {
+  jd: string;
+  settings: AiSettings;
+}) {
+  return requestStructured(
+    'job_metadata',
+    JSON_SCHEMAS.jobMetadata,
+    jobMetadataSchema,
+    [
+      '从招聘信息中提取公司名称、岗位名称和工作地点。',
+      '只能提取文本明确出现或可由标题直接确定的内容，不得根据业务描述猜测公司。',
+      '去掉“招聘”“职位详情”“岗位职责”“任职要求”等页面标签，以及薪资、福利和编号。',
+      '保留公司、岗位和地点在原文中的语言与正式写法，不翻译名称。',
+      '岗位名称保留职级、方向及实习/校招属性，但不要把部门、地点、公司拼入岗位名。',
+      '地点只保留城市或明确办公地点。远程岗位可以填写“远程”。',
+      '无法可靠判断的字段返回空字符串。',
+    ].join('\n'),
+    `【招聘信息】\n${sanitizeForAi(jd)}`,
     settings,
   );
 }

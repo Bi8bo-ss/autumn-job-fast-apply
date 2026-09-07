@@ -1,9 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type SubmitEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, FileSearch, Sparkles, WandSparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { ResumeRecord } from '@/lib/server/data';
 import { cn } from '@/lib/utils';
@@ -13,18 +15,20 @@ type Stage = 'idle' | 'reading' | 'matching' | 'analyzing' | 'tuning';
 export function JobForm({ resumes }: { resumes: ResumeRecord[] }) {
   const router = useRouter();
   const [jd, setJd] = useState('');
+  const [company, setCompany] = useState('');
+  const [role, setRole] = useState('');
   const [stage, setStage] = useState<Stage>('idle');
   const [error, setError] = useState('');
   const busy = stage !== 'idle';
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setStage('reading');
     const response = await fetch('/api/jobs/quick-start', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jd }),
+      body: JSON.stringify({ jd, company, role }),
     });
     const data = await response.json() as {
       error?: string;
@@ -78,10 +82,20 @@ export function JobForm({ resumes }: { resumes: ResumeRecord[] }) {
         <div className="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-emerald-50/50 p-5 sm:p-7">
           <div className="flex items-start gap-4">
             <span className="icon-tile"><FileSearch className="size-5" /></span>
-            <div><h2 className="text-lg font-semibold tracking-[-0.02em]">粘贴岗位 JD</h2><p className="mt-1.5 text-sm leading-6 text-muted-foreground">公司、岗位和地点能识别就自动填写；识别不到会留空，不影响继续投递。</p></div>
+            <div><h2 className="text-lg font-semibold tracking-[-0.02em]">填写岗位并粘贴 JD</h2><p className="mt-1.5 text-sm leading-6 text-muted-foreground">公司和岗位可以直接填写；留空时才会从 JD 自动识别，手填内容不会被覆盖。</p></div>
           </div>
         </div>
         <div className="p-5 sm:p-7">
+          <div className="mb-5 grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="quick-company">公司名称 <span className="font-normal text-muted-foreground">选填</span></Label>
+              <Input id="quick-company" value={company} onChange={(event) => setCompany(event.target.value)} maxLength={120} disabled={busy} autoComplete="organization" placeholder="留空则从 JD 自动识别" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quick-role">岗位名称 <span className="font-normal text-muted-foreground">选填</span></Label>
+              <Input id="quick-role" value={role} onChange={(event) => setRole(event.target.value)} maxLength={160} disabled={busy} placeholder="留空则从 JD 自动识别" />
+            </div>
+          </div>
           <label htmlFor="quick-jd" className="sr-only">岗位描述</label>
           <Textarea id="quick-jd" value={jd} onChange={(event) => setJd(event.target.value)} required minLength={30} maxLength={40000} disabled={busy} className="min-h-[330px] resize-y border-slate-200 bg-slate-50/50 p-4 text-[15px] leading-7 focus:bg-white" placeholder={'把招聘官网、公众号或招聘软件里的完整 JD 直接粘贴到这里…\n\n例如：\n公司名称：某某科技\n招聘岗位：产品经理实习生\n岗位职责：…'} />
           <div className="mt-3 flex items-center justify-between gap-4 text-xs text-muted-foreground"><span>{resumeCount ? `会在 ${resumeCount} 份基础简历中自动匹配` : '尚无可匹配的基础简历，岗位仍会正常保存'}</span><span>{jd.length.toLocaleString()} / 40,000</span></div>
