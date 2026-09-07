@@ -116,6 +116,57 @@ export function hasResumeBulletLead(value: string) {
   return Boolean(splitBulletLead(cleanText(value)).lead);
 }
 
+export function isResumeBulletLeadAligned(
+  value: string,
+  language: ResumeContent['language'],
+) {
+  const parsed = splitBulletLead(cleanText(value));
+  if (!parsed.lead || !parsed.rest) return false;
+
+  const lead = parsed.lead.replace(/\s+/g, '').toLowerCase();
+  const body = parsed.rest.toLowerCase();
+  const genericLeads = language === 'zh'
+    ? /^(?:数据分析|业务分析|工作内容|主要职责|核心贡献|综合能力|项目经验|相关经验|工作成果|成果产出|方案搭建|项目推进)$/
+    : /^(?:analysis|analytics|businessanalysis|impact|experience|responsibilities|contribution|delivery|projectwork)$/;
+  if (genericLeads.test(lead)) return false;
+
+  const rules = language === 'zh'
+    ? [
+        { lead: /履约|物流|配送|供应链|交付/, body: /履约|物流|配送|送装|同城配|供应链|交付/ },
+        { lead: /指标|监控|看板|口径|治理/, body: /指标|监控|看板|口径|核算|数据资产|数据集/ },
+        { lead: /效率|提效|自动化/, body: /效率|提效|自动化|耗时|压缩|缩短|优化|识别/ },
+        { lead: /用户|客群|画像/, body: /用户|客群|画像|聚类|渗透率|行为|需求/ },
+        { lead: /洞察|归因|策略|经营|规划|成本/, body: /洞察|归因|策略|经营|规划|成本|决策|异常|趋势/ },
+        { lead: /协同|推进|落地/, body: /协同|对接|统一|推进|落地|跨部门|团队|口径/ },
+        { lead: /数据工程|数据集成|数据治理/, body: /api|数据源|抓取|规整|合并|bigquery|数据库|数据集|清洗/ },
+        { lead: /实验|统计|研究/, body: /实验|检验|anova|ancova|t-test|调研|研究|样本/ },
+        { lead: /流程|系统|风控|内控/, body: /流程|系统|bpmn|dfd|erd|风控|内控|瓶颈|审计/ },
+        { lead: /产品|需求|体验/, body: /prd|user stories|产品|需求|体验|journey|persona|功能/ },
+      ]
+    : [
+        { lead: /fulfillment|logistics|delivery|supply/, body: /fulfillment|logistics|delivery|shipping|supply/ },
+        { lead: /metric|monitor|dashboard|governance/, body: /metric|monitor|dashboard|kpi|definition|dataset/ },
+        { lead: /efficien|automat|optim/, body: /efficien|automat|optim|reduc|accelerat|time/ },
+        { lead: /user|customer|segment/, body: /user|customer|segment|cluster|persona|behavior|need/ },
+        { lead: /insight|strategy|planning|cost/, body: /insight|strategy|planning|cost|decision|trend|driver/ },
+        { lead: /collaborat|stakeholder|execution/, body: /collaborat|stakeholder|partner|align|cross-functional|deliver/ },
+        { lead: /data engineering|integration|pipeline/, body: /api|source|pipeline|bigquery|database|dataset|clean/ },
+        { lead: /experiment|research|statistic/, body: /experiment|test|anova|ancova|research|sample|survey/ },
+        { lead: /process|system|risk/, body: /process|system|bpmn|dfd|erd|risk|audit|control/ },
+        { lead: /product|requirement|experience/, body: /prd|user stor|product|requirement|experience|journey|persona|feature/ },
+      ];
+
+  const matchedRules = rules.filter((rule) => rule.lead.test(lead));
+  if (matchedRules.length) return matchedRules.some((rule) => rule.body.test(body));
+
+  if (language === 'en') {
+    const meaningfulWords = lead.split(/[^a-z0-9]+/).filter((word) => word.length >= 4);
+    return meaningfulWords.some((word) => body.includes(word));
+  }
+  const leadPairs = Array.from({ length: Math.max(0, lead.length - 1) }, (_, index) => lead.slice(index, index + 2));
+  return leadPairs.some((pair) => body.includes(pair));
+}
+
 export function resumeBulletParts(value: string, language: ResumeContent['language']) {
   const compact = cleanText(value);
   const parsed = splitBulletLead(compact);
