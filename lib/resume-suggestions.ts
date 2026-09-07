@@ -1,6 +1,6 @@
 import type { ResumeContent } from '@/lib/product-types';
 
-export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete';
+export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete' | 'merge';
 export type ResumeSuggestionSection = 'summary' | 'experience' | 'project' | 'skills' | 'extras';
 
 const SECTION_LABELS: Record<ResumeSuggestionSection, string> = {
@@ -28,6 +28,8 @@ export function parseSuggestionSection(value: string): {
     ? 'append'
     : prefix === 'delete'
       ? 'delete'
+      : prefix === 'merge'
+        ? 'merge'
       : 'replace';
   const raw = (operation === 'replace' ? value : prefixedSection) as ResumeSuggestionSection;
   const section = raw in SECTION_LABELS ? raw : 'extras';
@@ -48,7 +50,7 @@ export function applyResumeSuggestion(
   const target = parseSuggestionSection(encodedSection);
   const nextText = normalizeSuggestedResumeText(
     target.section,
-    originalText,
+    target.operation === 'merge' ? '' : originalText,
     proposedText,
     source.language,
   );
@@ -75,6 +77,12 @@ export function applyResumeSuggestion(
     return nextText
       ? replaceSectionText(content, target.section, originalText, nextText)
       : deleteSectionText(content, target.section, originalText);
+  }
+
+  if (target.operation === 'merge') {
+    const sourceTexts = decodeMergeSourceTexts(originalText);
+    if (!nextText || sourceTexts.length < 2) return content;
+    return mergeSectionTexts(content, target.section, sourceTexts, nextText);
   }
 
   if (!originalText || !nextText) return content;
@@ -156,6 +164,32 @@ export function canEditResumeText(
   return content.projects.some((entry) => entry.bullets.includes(target));
 }
 
+export function encodeMergeSourceTexts(values: string[]) {
+  return JSON.stringify([...new Set(values.map((value) => value.trim()).filter(Boolean))]);
+}
+
+export function decodeMergeSourceTexts(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === 'string' && Boolean(item.trim()));
+  } catch {
+    return [];
+  }
+}
+
+export function canMergeResumeTexts(
+  content: ResumeContent,
+  section: ResumeSuggestionSection,
+  sourceTexts: string[],
+) {
+  if ((section !== 'experience' && section !== 'project') || sourceTexts.length < 2) return false;
+  const unique = [...new Set(sourceTexts)];
+  if (unique.length !== sourceTexts.length) return false;
+  const entries = section === 'experience' ? content.experiences : content.projects;
+  return entries.some((entry) => unique.every((text) => entry.bullets.includes(text)));
+}
+
 function replaceSectionText(
   content: ResumeContent,
   section: ResumeSuggestionSection,
@@ -193,6 +227,26 @@ function deleteSectionText(
     for (const entry of entries) {
       if (deleteFirst(entry.bullets, target)) break;
     }
+  }
+  return content;
+}
+
+function mergeSectionTexts(
+  content: ResumeContent,
+  section: ResumeSuggestionSection,
+  sourceTexts: string[],
+  replacement: string,
+) {
+  if (section !== 'experience' && section !== 'project') return content;
+  const entries = section === 'experience' ? content.experiences : content.projects;
+  const unique = [...new Set(sourceTexts)];
+  for (const entry of entries) {
+    if (!unique.every((text) => entry.bullets.includes(text))) continue;
+    const firstIndex = entry.bullets.indexOf(unique[0]);
+    const removed = new Set(unique);
+    entry.bullets = entry.bullets.filter((text) => !removed.has(text));
+    entry.bullets.splice(Math.min(firstIndex, entry.bullets.length), 0, replacement);
+    break;
   }
   return content;
 }

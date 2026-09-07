@@ -9,6 +9,8 @@ import type {
 } from '@/lib/product-types';
 import {
   canEditResumeText,
+  canMergeResumeTexts,
+  encodeMergeSourceTexts,
   hasResumeBulletLead,
   normalizeSuggestedResumeText,
   resumeContainsExactText,
@@ -30,9 +32,10 @@ const jobAnalysisSchema = z.object({
 const tuneOutputSchema = z.object({
   suggestions: z.array(
     z.object({
-      operation: z.enum(['replace', 'append', 'delete']),
+      operation: z.enum(['replace', 'append', 'delete', 'merge']),
       sectionKey: z.enum(['summary', 'experience', 'project', 'skills', 'extras']),
       originalText: z.string(),
+      mergedOriginalTexts: z.array(z.string()),
       proposedText: z.string(),
       rationale: z.string(),
       matchedRequirement: z.string(),
@@ -93,18 +96,20 @@ const JSON_SCHEMAS = {
             'operation',
             'sectionKey',
             'originalText',
+            'mergedOriginalTexts',
             'proposedText',
             'rationale',
             'matchedRequirement',
             'needsUserInput',
           ],
           properties: {
-            operation: { type: 'string', enum: ['replace', 'append', 'delete'] },
+            operation: { type: 'string', enum: ['replace', 'append', 'delete', 'merge'] },
             sectionKey: {
               type: 'string',
               enum: ['summary', 'experience', 'project', 'skills', 'extras'],
             },
             originalText: { type: 'string' },
+            mergedOriginalTexts: { type: 'array', items: { type: 'string' } },
             proposedText: { type: 'string' },
             rationale: { type: 'string' },
             matchedRequirement: { type: 'string' },
@@ -278,7 +283,7 @@ export async function tuneResumeWithAi({
     tuneOutputSchema,
     [
       '你是校园招聘简历定向编辑。目标是让简历明显向岗位靠拢，不限于同义词微调，但所有事实必须可靠。',
-      '逐条审阅结构化简历中的每一条经历和项目要点，并在保留、改写、删除、新增之间做明确判断。不要为了凑数量改写已经清晰且高度相关的内容。',
+      '逐条审阅结构化简历中的每一条经历和项目要点，并在保留、改写、合并、删除、新增之间做明确判断。不要为了凑数量改写已经清晰且高度相关的内容。',
       '每条 replace 必须带来实质提升，至少做到以下一项：让职责更贴近 JD、前置可验证的岗位关键词、补强任务—行动—结果链路、合并重复信息、让工具与业务结果的联系更清楚。禁止只换同义词或机械塞关键词。',
       '允许重组已有要点、合并冗余、调整要点顺序感，并在已有事实支持下强化任务—行动—结果链路。优先把与 JD 最相关且证据最强的内容放在建议正文前部。',
       '如果 JD 明确强调某个行业或方向，可以在 skills 或 extras 新增一条简短的“行业关注 / 求职方向 / 学习关注”定位语。例如“行业关注：新能源汽车、智能出行与用户运营”。这种话只能表达关注或求职意向，不能写成“熟悉、精通、有经验、负责过”。',
@@ -286,14 +291,18 @@ export async function tuneResumeWithAi({
       '禁止编造或夸大经历、职责、项目、技能、数字和成果；没有证据的“熟悉、精通、具备经验、负责过”等表述必须 needsUserInput=true，并明确提示用户补充。',
       'operation=replace 时，originalText 必须逐字引用结构化简历中一段完整的现有文本；可用于 summary、experience、project、skills、extras。',
       'experience 和 project 的 proposedText 必须是一条完整的纯文本要点：不换行、不带项目符号、不使用 Markdown 或 LaTeX。不得把一条要点拆成多条。',
-      '每条经历与项目的 proposedText 都必须严格使用“短标题：正文”格式。中文短标题建议 2 至 6 个字，英文短标题建议 1 至 4 个词；短标题必须概括该条最有价值且最贴合 JD 的能力或成果，例如“指标体系：”“效率优化：”“业务洞察：”“跨域协同：”。冒号后的正文必须从行动或任务开始。',
+      '每条经历与项目的 proposedText 都必须严格使用“短标题：正文”格式。中文短标题建议 2 至 6 个字，英文短标题建议 1 至 4 个词；短标题必须概括该条最有价值且最贴合 JD 的能力或成果，例如“指标体系：”“效率优化：”“业务洞察：”“跨域协同：”。冒号后的正文要把业务场景、具体动作、使用的方法或工具、可验证结果串成一条完整叙述。',
       '可以重写原有短标题，使它更准确地表达该条与 JD 的连接；同一段经历不要连续使用含义相同的短标题。禁止使用“工作内容：”“主要职责：”“核心贡献：”等没有信息量的标题。',
       '原简历中没有短标题的经历或项目要点，只要被保留，就应通过 replace 补上有信息量的短标题。',
-      '同一段经历避免重复描述相同任务、指标和结果。单条中文建议尽量控制在 45 至 110 字，英文建议尽量控制在 18 至 40 词；信息过多时先合并重复内容或提出删除建议。',
+      '禁止把一个完整成果拆成多个半句小点，也不要让一句只剩“搭建看板”“推进协同”“输出报告”这类动作。单条中文建议尽量控制在 70 至 130 字，英文建议尽量控制在 28 至 55 词，通常在简历中占 2 至 3 行。',
+      '优先保留并前置原文中的量化证据，例如时间、效率、覆盖率和产出数量；合并或改写时不得丢失任何仍相关的数字。没有数字时要明确写出对决策、运营、流程、用户或交付的实际影响，但绝不能虚构数字。',
+      '控制每段经历的信息骨架：最相关的核心经历通常保留 4 至 5 条，其他经历通常保留 3 至 4 条；每个项目通常保留 1 条完整要点，确有两个不同成果时最多 2 条。超过目标时优先合并同一任务链上的碎片，再删除重复或低相关内容。',
       'operation=append 可用于 experience、project、skills 或 extras。用于 skills/extras 时 originalText 必须为空字符串；用于 experience/project 时，originalText 必须逐字引用目标经历或项目中的一条现有要点，作为定位锚点，新要点会添加到同一段经历或项目末尾。',
       '新增经历或项目要点只能整合该段经历本身及候选人事实库中明确支持的事实，绝不能把另一段经历的职责或成果挪过来，也不能仅凭 JD 新造行业经验。证据不足时不要新增；确实值得询问用户时才设置 needsUserInput=true。',
+      'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把这些事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，也不得跨公司或跨项目合并。',
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
-      '允许用一条 replace 加一条 delete 完成合并：先把有效信息并入保留项，再删除重复项。不得因为 JD 没提某项就机械删除；只有删除后能明显提升岗位针对性或信息密度时才建议删除。',
+      '优先使用 merge 完成“多条碎片合成一条”，不要用多条 replace 制造更多要点。不得因为 JD 没提某项就机械删除；只有删除或合并后能明显提升岗位针对性、内容深度或信息密度时才建议。',
+      '除 merge 外，mergedOriginalTexts 必须为空数组。任何一个原始要点最多只能被一个 replace、merge 或 delete 建议使用，避免建议之间互相覆盖。',
       '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
       '新增内容要克制：优先通过改写、合并和删除腾出篇幅；总新增不超过三条，并确保最终仍适合一页简历。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
@@ -304,14 +313,17 @@ export async function tuneResumeWithAi({
 
   let appendCount = 0;
   const seen = new Set<string>();
+  const claimedOriginals = new Set<string>();
   const confirmedFacts = JSON.stringify(tuningProfileFacts(profile));
   const suggestions = result.suggestions.filter((suggestion) => {
     const operation = suggestion.operation as ResumeSuggestionOperation;
     const section = suggestion.sectionKey as ResumeSuggestionSection;
     const rawProposedText = suggestion.proposedText;
+    let qualitySourceTexts: string[] = [];
+    if (operation !== 'merge' && suggestion.mergedOriginalTexts.length) return false;
     suggestion.proposedText = normalizeSuggestedResumeText(
       section,
-      suggestion.originalText,
+      operation === 'merge' ? '' : suggestion.originalText,
       suggestion.proposedText,
       content.language,
     );
@@ -323,7 +335,9 @@ export async function tuneResumeWithAi({
       const proposalLength = content.language === 'zh'
         ? suggestion.proposedText.length
         : suggestion.proposedText.split(/\s+/).filter(Boolean).length;
-      if (proposalLength > (content.language === 'zh' ? 140 : 55)) return false;
+      if (operation !== 'delete'
+        && (proposalLength < (content.language === 'zh' ? 60 : 24)
+          || proposalLength > (content.language === 'zh' ? 160 : 60))) return false;
     }
     if (operation === 'append') {
       if (section === 'skills' || section === 'extras') {
@@ -344,16 +358,43 @@ export async function tuneResumeWithAi({
       if (!suggestion.originalText
         || !resumeContainsExactText(content, suggestion.originalText)
         || !canEditResumeText(content, section, suggestion.originalText)) return false;
+    } else if (operation === 'merge') {
+      const sourceTexts = [suggestion.originalText, ...suggestion.mergedOriginalTexts]
+        .map((text) => text.trim())
+        .filter(Boolean);
+      if (!canMergeResumeTexts(content, section, sourceTexts)) return false;
+      qualitySourceTexts = sourceTexts;
+      suggestion.originalText = encodeMergeSourceTexts(sourceTexts);
     } else if (!suggestion.originalText
       || !resumeContainsExactText(content, suggestion.originalText)
       || !canEditResumeText(content, section, suggestion.originalText)) {
       return false;
+    } else {
+      qualitySourceTexts = [suggestion.originalText];
     }
-    if (operation === 'replace'
+    if (operation !== 'delete' && (section === 'experience' || section === 'project')) {
+      if (!hasOutcomeSignal(suggestion.proposedText, content.language)) return false;
+      const proposalForMetrics = suggestion.proposedText.replace(/\s+/g, '');
+      if (numericEvidence(qualitySourceTexts.join(' ')).some((token) => !proposalForMetrics.includes(token))) {
+        return false;
+      }
+      const knownEvidence = `${JSON.stringify(content)} ${confirmedFacts}`.replace(/\s+/g, '');
+      if (numericEvidence(suggestion.proposedText).some((token) => !knownEvidence.includes(token))) {
+        suggestion.needsUserInput = true;
+      }
+    }
+    if ((operation === 'replace' || operation === 'merge')
       && suggestion.proposedText !== suggestion.originalText
       && resumeContainsExactText(content, suggestion.proposedText)) {
       return false;
     }
+    const mutatedOriginals = operation === 'merge'
+      ? JSON.parse(suggestion.originalText) as string[]
+      : operation === 'replace' || operation === 'delete'
+        ? [suggestion.originalText]
+        : [];
+    if (mutatedOriginals.some((text) => claimedOriginals.has(text))) return false;
+    for (const text of mutatedOriginals) claimedOriginals.add(text);
     const key = `${operation}:${section}:${suggestion.originalText}:${suggestion.proposedText}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -443,4 +484,18 @@ function tuningProfileFacts(profile: Profile) {
     preferences: profile.preferences,
     customFields: profile.customFields,
   };
+}
+
+function numericEvidence(value: string) {
+  return [...new Set(
+    (value.match(/\d+(?:\.\d+)?(?:\s*(?:%|\+|分钟|小时|天|项|倍|万|亿|人|个))?/g) || [])
+      .map((token) => token.replace(/\s+/g, '')),
+  )];
+}
+
+function hasOutcomeSignal(value: string, language: ResumeContent['language']) {
+  if (language === 'en') {
+    return /support|enable|improv|reduc|accelerat|deliver|identify|inform|drive|streamlin|ensure|launch|complete|build/i.test(value);
+  }
+  return /支持|支撑|提升|降低|缩短|压缩|优化|实现|形成|沉淀|输出|识别|定位|保障|驱动|推进|落地|完成|减少|提高|助力|避免|闭环/.test(value);
 }

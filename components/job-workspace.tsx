@@ -33,7 +33,7 @@ import {
 } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
 import { normalizeResumeContent, resumeContentToText } from '@/lib/resume-parser';
-import { applyResumeSuggestion, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
+import { applyResumeSuggestion, decodeMergeSourceTexts, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
 
 type WorkspaceVersion = {
   id: string;
@@ -522,7 +522,18 @@ function Suggestion({
   total: number;
 }) {
   const target = parseSuggestionSection(suggestion.sectionKey);
-  const actionLabel = target.operation === 'append' ? '新增' : target.operation === 'delete' ? '删除 / 合并' : '改写';
+  const actionLabel = target.operation === 'append'
+    ? '新增'
+    : target.operation === 'delete'
+      ? '删除'
+      : target.operation === 'merge'
+        ? '合并深化'
+        : '改写';
+  const sourceTexts = target.operation === 'merge'
+    ? decodeMergeSourceTexts(suggestion.originalText)
+    : suggestion.originalText
+      ? [suggestion.originalText]
+      : [];
   const savedText = suggestion.editedText || suggestion.proposedText;
   const [edit, setEdit] = useState(savedText);
   const [busy, setBusy] = useState<'' | 'accepted' | 'rejected'>('');
@@ -530,6 +541,8 @@ function Suggestion({
   const needsFact = Boolean(suggestion.needsUserInput) && edit.trim() === String(suggestion.proposedText || '').trim();
   const confirmLabel = target.operation === 'append'
     ? '确认新增'
+    : target.operation === 'merge'
+      ? '确认合并'
     : target.operation === 'delete' && !edit.trim()
       ? '确认删除'
       : '接受改写';
@@ -583,16 +596,18 @@ function Suggestion({
           <p className="mt-2 rounded-lg border border-blue-200 bg-[#f5f8ff] px-3.5 py-3 text-sm leading-6 text-[#244579]">{suggestion.matchedRequirement}</p>
         </section>
 
-        {suggestion.originalText ? (
+        {sourceTexts.length ? (
           <section>
-            <p className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '添加到这段经历 / 项目' : target.operation === 'delete' ? '准备删除的内容' : '当前简历表述'}</p>
-            <p className="mt-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm leading-6 text-[#58657a]">{suggestion.originalText}</p>
+            <p className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '添加到这段经历 / 项目' : target.operation === 'merge' ? `准备合并的 ${sourceTexts.length} 条内容` : target.operation === 'delete' ? '准备删除的内容' : '当前简历表述'}</p>
+            <div className="mt-2 space-y-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm leading-6 text-[#58657a]">
+              {sourceTexts.map((text, index) => <p key={`${index}-${text}`}>{target.operation === 'merge' ? `${index + 1}. ` : ''}{text}</p>)}
+            </div>
           </section>
         ) : null}
 
         <section>
           <div className="flex items-center justify-between gap-2">
-            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '新增要点（可编辑）' : target.operation === 'delete' ? '删除后留空；填写内容则改写' : '建议改写（可编辑）'}</label>
+            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '新增要点（可编辑）' : target.operation === 'merge' ? '合并后的完整要点（可编辑）' : target.operation === 'delete' ? '删除后留空；填写内容则改写' : '建议改写（可编辑）'}</label>
             <span className="text-xs tabular-nums text-muted-foreground">{edit.length} 字</span>
           </div>
           <Textarea
