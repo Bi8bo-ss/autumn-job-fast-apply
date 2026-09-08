@@ -1,9 +1,10 @@
 import { getChatGPTUser, requireChatGPTUser } from '@/app/chatgpt-auth';
 import { redirect } from 'next/navigation';
+import { getRuntimeEnv } from '@/lib/server/runtime';
 
 function canAccessPrivateWorkspace(userId: string) {
   if (process.env.NODE_ENV !== 'production') return true;
-  const ownerUserId = process.env.APP_OWNER_USER_ID?.trim();
+  const ownerUserId = getRuntimeEnv().APP_OWNER_USER_ID?.trim();
   return Boolean(ownerUserId && userId === ownerUserId);
 }
 
