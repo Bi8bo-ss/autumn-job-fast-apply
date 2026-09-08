@@ -67,10 +67,32 @@ export function isLikelySupplementalNoise(value: string, language: Language) {
   return false;
 }
 
-function cleanSupplementalLines(lines: string[], language: Language) {
+export function normalizeResumeSkillLine(value: string, language: Language) {
+  const line = cleanBodyLine(value);
+  const match = line.match(/^(?:技能确认|待确认技能|skill confirmation|skill check)\s*[：:]\s*(.+)$/i);
+  if (!match) return line;
+  const skill = match[1].trim();
+  if (language === 'en') {
+    const category = /interview|research|survey|experiment|test|model|statistic|analysis|method/i.test(skill)
+      ? 'Research Methods'
+      : /tableau|power\s*bi|excel|sql|python|r\b|looker|figma|java|javascript|matlab|spss|sas/i.test(skill)
+        ? 'Tools'
+        : 'Professional Skills';
+    return `${category}: ${skill}`;
+  }
+  const category = /访谈|调研|问卷|实验|测试|检验|建模|统计|分析|研究|方法|归因|聚类|预测/.test(skill)
+    ? '研究与方法'
+    : /Tableau|Power\s*BI|Excel|SQL|Python|Looker|Figma|Java|JavaScript|MATLAB|SPSS|SAS|工具|软件/i.test(skill)
+      ? '工具技能'
+      : '专业技能';
+  return `${category}：${skill}`;
+}
+
+function cleanSupplementalLines(lines: string[], language: Language, kind: 'skills' | 'extras') {
   const seen = new Set<string>();
   return lines
     .map(cleanBodyLine)
+    .map((line) => kind === 'skills' ? normalizeResumeSkillLine(line, language) : line)
     .filter((line) => !isLikelySupplementalNoise(line, language))
     .filter((line) => {
       const key = line.replace(/\s+/g, '').toLowerCase();
@@ -223,8 +245,8 @@ export function parseResumeText(text: string, language: Language): ResumeContent
     education: splitList(buckets.education),
     experiences: parseEntries(buckets.experiences),
     projects: parseEntries(buckets.projects),
-    skills: cleanSupplementalLines(splitList(buckets.skills), language),
-    extras: cleanSupplementalLines([...overflow, ...splitList(buckets.extras)], language),
+    skills: cleanSupplementalLines(splitList(buckets.skills), language, 'skills'),
+    extras: cleanSupplementalLines([...overflow, ...splitList(buckets.extras)], language, 'extras'),
   };
 }
 
@@ -261,7 +283,7 @@ export function normalizeResumeContent(content: ResumeContent, sourceText?: stri
     education: parsed.education.map(cleanLine).filter(Boolean),
     experiences: parsed.experiences.map(normalizeEntry),
     projects: parsed.projects.map(normalizeEntry),
-    skills: cleanSupplementalLines(parsed.skills, parsed.language),
-    extras: cleanSupplementalLines(parsed.extras, parsed.language),
+    skills: cleanSupplementalLines(parsed.skills, parsed.language, 'skills'),
+    extras: cleanSupplementalLines(parsed.extras, parsed.language, 'extras'),
   };
 }

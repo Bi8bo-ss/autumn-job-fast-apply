@@ -1,5 +1,5 @@
 import type { ResumeContent } from '@/lib/product-types';
-import { isLikelySupplementalNoise } from '@/lib/resume-parser';
+import { isLikelySupplementalNoise, normalizeResumeSkillLine } from '@/lib/resume-parser';
 
 export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete' | 'merge';
 export type ResumeSuggestionSection = 'summary' | 'experience' | 'project' | 'skills' | 'extras';
@@ -101,7 +101,11 @@ export function normalizeSuggestedResumeText(
 ) {
   const compact = cleanText(proposedText);
 
-  if (!compact || (section !== 'experience' && section !== 'project')) {
+  if (!compact) return compact;
+  if (section === 'skills') {
+    return normalizeResumeSkillLine(compact, language || inferLanguage(compact));
+  }
+  if (section !== 'experience' && section !== 'project') {
     return compact;
   }
 
