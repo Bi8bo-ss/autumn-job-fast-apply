@@ -6,6 +6,7 @@ export type RuntimeEnv = Cloudflare.Env & {
   OPENAI_MODEL?: string;
   SITE_URL?: string;
   APP_OWNER_USER_ID?: string;
+  APP_OWNER_EMAIL?: string;
 };
 
 export function getRuntimeEnv(): RuntimeEnv {
