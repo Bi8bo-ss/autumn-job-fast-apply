@@ -4,7 +4,7 @@
 
 ## 在线演示
 
-[打开只读产品演示](https://autumn-job-fast-apply.ddjsgzx.chatgpt.site/demo)
+[无需登录，打开只读产品演示](https://autumn-job-fast-apply.ddjsgzx.chatgpt.site/demo)
 
 演示页面使用虚拟数据，所有操作仅在浏览器内模拟，不保存内容、不调用 AI，也不会访问正式工作台中的个人数据。
 
