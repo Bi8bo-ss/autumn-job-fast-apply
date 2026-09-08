@@ -160,6 +160,16 @@ export const jobInputSchema = z.object({
 export const suggestionUpdateSchema = z.object({
   state: z.enum(['pending', 'accepted', 'rejected']),
   editedText: z.string().max(5000).optional(),
+  confirmedByUser: z.boolean().optional(),
+});
+
+export const jobChatInputSchema = z.object({
+  message: z.string().trim().min(1, '请输入想问 AI 的内容').max(3000),
+  resumeVersionId: z.string().min(1),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().trim().min(1).max(4000),
+  })).max(12).default([]),
 });
 
 export const customAnswerInputSchema = z.object({

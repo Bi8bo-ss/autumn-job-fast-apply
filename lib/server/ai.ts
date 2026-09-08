@@ -215,6 +215,31 @@ async function requestStructured<T>(
   throw new Error('AI 返回格式异常，已安全保留现有内容，请稍后重试。');
 }
 
+async function requestText(
+  instructions: string,
+  input: string,
+  settings: AiSettings,
+) {
+  const client = createClient();
+  const model = getRuntimeEnv().OPENAI_MODEL || 'gpt-5.6-luna';
+  try {
+    const response = await client.responses.create({
+      model,
+      store: false,
+      reasoning: { effort: settings.reasoningEffort },
+      instructions,
+      input,
+      max_output_tokens: 1400,
+    });
+    const answer = response.output_text?.trim();
+    if (!answer) throw new Error('模型没有返回可用内容。');
+    return answer;
+  } catch (error) {
+    console.error('OpenAI text response failed', error);
+    throw new Error('AI 暂时没有回复，请稍后重试。');
+  }
+}
+
 export function sanitizeForAi(text: string) {
   return text
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[邮箱已隐藏]')
@@ -309,10 +334,12 @@ export async function tuneResumeWithAi({
       'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把同一任务链的事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，不得把无关主题硬塞进同一点，也不得跨公司或跨项目合并。',
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
       '技能和其他信息也必须保持整洁：主动删除重复词、解析残片、无意义关键词堆叠和无法构成完整信息的孤立短句，例如“项目统筹统筹物流项目协调”。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
+      '完成常规改写规划后，再逐项核对 JD 明确要求的命名技能、软件、平台、编程语言或分析方法。如果某项高价值技能（例如 Tableau）在原始简历和候选人已确认事实中都没有证据，但确认后能显著提高匹配度，必须追加一条“技能确认”建议：operation=append、sectionKey=skills、originalText=""、needsUserInput=true。proposedText 使用“类别：技能名”格式，只写待确认的真实技能名称，不得自行添加“精通、熟练”等程度；rationale 必须直接询问“岗位要求 X，但现有资料未体现，你是否确实会使用？”。最多询问 3 项，不要把同义技能重复提问。',
+      '技能确认建议必须排在全部常规改写、合并、删除和新增建议之后。若原始简历或事实库已明确包含该技能，不得再次询问；若用户不确认，该技能不会进入简历。',
       '优先使用 merge 完成“多条碎片合成一条”，不要用多条 replace 制造更多要点。不得因为 JD 没提某项就机械删除；只有删除或合并后能明显提升岗位针对性、内容深度或信息密度时才建议。',
       '除 merge 外，mergedOriginalTexts 必须为空数组。任何一个原始要点最多只能被一个 replace、merge 或 delete 建议使用，避免建议之间互相覆盖。',
       '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
-      '新增内容要克制：优先通过改写、合并和删除腾出篇幅；总新增不超过两条，并确保最终仍适合一页简历。',
+      '新增内容要克制：优先通过改写、合并和删除腾出篇幅；常规新增不超过两条，并确保最终仍适合一页简历。技能确认属于待用户回答的问题，可在常规新增之外最多输出三条。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
     ].join('\n');
   const tuningInput = `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【候选人已确认事实（不含联系方式）】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}`;
@@ -327,8 +354,10 @@ export async function tuneResumeWithAi({
   );
 
   const confirmedFacts = JSON.stringify(tuningProfileFacts(profile));
+  const knownSkillEvidence = `${JSON.stringify(content)} ${confirmedFacts}`.toLowerCase().replace(/\s+/g, '');
   const validateSuggestions = (candidateResult: TuneOutput) => {
     let appendCount = 0;
+    let skillConfirmationCount = 0;
     const seen = new Set<string>();
     const claimedOriginals = new Set<string>();
     const suggestions = candidateResult.suggestions.filter((suggestion) => {
@@ -375,6 +404,17 @@ export async function tuneResumeWithAi({
       if (/(?:熟悉|精通|具备.+经验|负责过|主导过|掌握|proficient|experienced in|led\b)/i.test(suggestion.proposedText)
         && !confirmedFacts.includes(suggestion.proposedText)) {
         suggestion.needsUserInput = true;
+      }
+      if (section === 'skills') {
+        const [category = '', body = ''] = suggestion.proposedText.split(/[：:]/, 2);
+        const positioning = /行业关注|求职方向|学习关注|industry interest|career focus/i.test(category);
+        const namedSkills = body.split(/[、,，/|+；;（）()]/)
+          .map((item) => item.trim().toLowerCase().replace(/\s+/g, ''))
+          .filter((item) => item.length >= 2);
+        if (!positioning && namedSkills.some((skill) => !knownSkillEvidence.includes(skill))) {
+          suggestion.needsUserInput = true;
+          suggestion.rationale = `岗位需要 ${body.trim()}，但原始简历和事实库尚未体现。你是否确实会使用？`;
+        }
       }
     } else if (operation === 'delete') {
       suggestion.proposedText = '';
@@ -423,13 +463,26 @@ export async function tuneResumeWithAi({
     if (seen.has(key)) return false;
     seen.add(key);
     if (operation === 'append') {
-      appendCount += 1;
-      if (appendCount > 2) return false;
+      if (section === 'skills' && suggestion.needsUserInput) {
+        skillConfirmationCount += 1;
+        if (skillConfirmationCount > 3) return false;
+      } else {
+        appendCount += 1;
+        if (appendCount > 2) return false;
+      }
     }
       return true;
     });
 
-    return suggestions.slice(0, settings.suggestionLimit);
+    const confirmations = suggestions.filter((suggestion) => suggestion.operation === 'append'
+      && suggestion.sectionKey === 'skills'
+      && suggestion.needsUserInput);
+    const regular = suggestions.filter((suggestion) => !confirmations.includes(suggestion));
+    const confirmationSlots = Math.min(confirmations.length, Math.min(3, settings.suggestionLimit));
+    return [
+      ...regular.slice(0, Math.max(0, settings.suggestionLimit - confirmationSlots)),
+      ...confirmations.slice(0, confirmationSlots),
+    ];
   };
 
   let suggestions = validateSuggestions(result);
@@ -456,6 +509,36 @@ export async function tuneResumeWithAi({
   }
 
   return { suggestions };
+}
+
+export async function chatWithJobAi({
+  jd,
+  content,
+  profile,
+  message,
+  history,
+}: {
+  jd: string;
+  content: ResumeContent;
+  profile: Profile;
+  message: string;
+  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+}) {
+  const conversation = history
+    .map((item) => `${item.role === 'user' ? '用户' : 'AI'}：${sanitizeForAi(item.content)}`)
+    .join('\n');
+  const answer = await requestText(
+    [
+      '你是岗位页面内的简历求职助手。围绕当前 JD、原始基础简历和候选人已确认事实回答用户问题。',
+      '事实边界必须严格：明确区分“现有简历已证明”“事实库已确认”和“需要用户确认”；不得把 JD 要求当成候选人能力，不得编造技能、经历、数字或成果。',
+      '你只能给出分析、提问或可直接复制的候选文本，不能声称已经修改简历。用户想新增未被证明的技能时，先用一句明确问题确认。',
+      '涉及改写时遵守简历规则：经历要点使用“准确短标题：完整任务链”，标题与正文互证，保留相关量化证据，避免泛标题和碎片化小点。',
+      '不要输出邮箱、手机号、详细地址或证件号。回答简洁、具体、可操作，默认使用中文。',
+    ].join('\n'),
+    `【岗位描述】\n${sanitizeForAi(jd)}\n\n【原始基础简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【候选人已确认事实】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}\n\n【最近对话】\n${conversation || '无'}\n\n【用户当前问题】\n${sanitizeForAi(message)}`,
+    profile.aiSettings,
+  );
+  return { answer: sanitizeForAi(answer) };
 }
 
 export async function generateApplicationNarrativesWithAi({

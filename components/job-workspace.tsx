@@ -1,7 +1,7 @@
 'use client';
 
 import Image from 'next/image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type SubmitEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -13,6 +13,8 @@ import {
   FileDown,
   LoaderCircle,
   MapPin,
+  MessageCircle,
+  Send,
   Sparkles,
   X,
 } from 'lucide-react';
@@ -319,6 +321,8 @@ export function JobWorkspace({
                   </div>
                 </details>
               ) : null}
+
+              <JobAiChat jobId={job.id} resumeVersionId={previewVersion?.id || selected} />
             </div>
           </div>
         </div>
@@ -512,6 +516,99 @@ function PreviewBullet({ bullet, language }: { bullet: string; language: ResumeC
   );
 }
 
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+function JobAiChat({ jobId, resumeVersionId }: { jobId: string; resumeVersionId: string }) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function send(messageOverride?: string) {
+    const message = (messageOverride ?? input).trim();
+    if (!message || busy || !resumeVersionId) return;
+    const history = messages.slice(-12);
+    setMessages((current) => [...current, { role: 'user', content: message }]);
+    setInput('');
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/chat`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message, resumeVersionId, history }),
+      });
+      const result = await response.json().catch(() => ({})) as { answer?: string; error?: string };
+      if (!response.ok || !result.answer) throw new Error(result.error || 'AI 暂时没有回复。');
+      setMessages((current) => [...current, { role: 'assistant', content: result.answer as string }]);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'AI 暂时没有回复，请重试。');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function submit(event: SubmitEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void send();
+  }
+
+  return (
+    <details className="workspace-panel group overflow-hidden">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><MessageCircle className="size-4.5" /></span>
+          <span>
+            <span className="block text-sm font-semibold">岗位 AI 助手</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">问 JD、简历表达或补充方向，不会直接改动简历</span>
+          </span>
+        </span>
+        <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="border-t bg-[#fbfcfe] p-4">
+        {!messages.length ? (
+          <div>
+            <p className="text-sm leading-6 text-muted-foreground">我会结合当前 JD、原始基础简历和事实库回答。资料没有证明的能力，我会先向你确认。</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {['这个 JD 最看重什么？', '我还缺哪些关键证据？', '检查当前简历的内容取舍'].map((prompt) => (
+                <button key={prompt} type="button" disabled={!resumeVersionId || busy} onClick={() => void send(prompt)} className="rounded-full border bg-white px-3 py-1.5 text-xs font-medium text-[#465166] transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary disabled:opacity-50">{prompt}</button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="max-h-80 space-y-3 overflow-y-auto pr-1" aria-live="polite">
+            {messages.map((message, index) => (
+              <div key={`${message.role}-${index}`} className={cn('flex', message.role === 'user' ? 'justify-end' : 'justify-start')}>
+                <p className={cn('max-w-[92%] whitespace-pre-wrap rounded-xl px-3.5 py-2.5 text-sm leading-6', message.role === 'user' ? 'bg-primary text-white' : 'border bg-white text-[#354057]')}>{message.content}</p>
+              </div>
+            ))}
+            {busy ? <p className="inline-flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" />正在结合 JD 和原始简历思考…</p> : null}
+          </div>
+        )}
+        {error ? <p role="alert" className="mt-3 text-sm text-red-700">{error}</p> : null}
+        <form onSubmit={submit} className="mt-4 flex items-end gap-2">
+          <Textarea
+            aria-label="向岗位 AI 助手提问"
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder={resumeVersionId ? '例如：如果我会 Tableau，放在哪一行最合适？' : '请先选择一份原始基础简历'}
+            className="min-h-20 resize-none bg-white text-sm"
+            disabled={!resumeVersionId || busy}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                void send();
+              }
+            }}
+          />
+          <Button type="submit" size="icon" className="size-11 shrink-0" disabled={!input.trim() || !resumeVersionId || busy} aria-label="发送消息"><Send /></Button>
+        </form>
+        <p className="mt-2 text-xs text-muted-foreground">当前页面会话，刷新后清空；回答仅供参考，不会自动接受建议或写入简历。</p>
+      </div>
+    </details>
+  );
+}
+
 function Suggestion({
   suggestion,
   onChange,
@@ -526,7 +623,12 @@ function Suggestion({
   total: number;
 }) {
   const target = parseSuggestionSection(suggestion.sectionKey);
-  const actionLabel = target.operation === 'append'
+  const skillConfirmation = target.operation === 'append'
+    && target.section === 'skills'
+    && Boolean(suggestion.needsUserInput);
+  const actionLabel = skillConfirmation
+    ? '技能确认'
+    : target.operation === 'append'
     ? '新增'
     : target.operation === 'delete'
       ? '删除'
@@ -543,7 +645,9 @@ function Suggestion({
   const [busy, setBusy] = useState<'' | 'accepted' | 'rejected'>('');
   const [actionError, setActionError] = useState('');
   const needsFact = Boolean(suggestion.needsUserInput) && edit.trim() === String(suggestion.proposedText || '').trim();
-  const confirmLabel = target.operation === 'append'
+  const confirmLabel = skillConfirmation
+    ? '我会，加入简历'
+    : target.operation === 'append'
     ? '确认新增'
     : target.operation === 'merge'
       ? '确认合并'
@@ -551,8 +655,8 @@ function Suggestion({
       ? '确认删除'
       : '接受改写';
 
-  async function update(state: 'accepted' | 'rejected') {
-    if (state === 'accepted' && needsFact) {
+  async function update(state: 'accepted' | 'rejected', confirmedByUser = false) {
+    if (state === 'accepted' && needsFact && !confirmedByUser) {
       setActionError('这条建议缺少事实依据。请先补充真实内容，再点击接受。');
       return;
     }
@@ -562,7 +666,7 @@ function Suggestion({
       const response = await fetch(`/api/suggestions/${suggestion.id}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state, editedText: edit }),
+        body: JSON.stringify({ state, editedText: edit, confirmedByUser }),
       });
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error || '保存失败，请重试。');
@@ -596,7 +700,7 @@ function Suggestion({
 
       <div className="space-y-5 p-5">
         <section>
-          <p className="text-xs font-semibold text-muted-foreground">来自岗位要求</p>
+          <p className="text-xs font-semibold text-muted-foreground">{skillConfirmation ? '为什么询问' : '来自岗位要求'}</p>
           <p className="mt-2 rounded-lg border border-blue-200 bg-[#f5f8ff] px-3.5 py-3 text-sm leading-6 text-[#244579]">{suggestion.matchedRequirement}</p>
         </section>
 
@@ -611,7 +715,7 @@ function Suggestion({
 
         <section>
           <div className="flex items-center justify-between gap-2">
-            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '新增要点（可编辑）' : target.operation === 'merge' ? '合并后的完整要点（可编辑）' : target.operation === 'delete' ? '删除后留空；填写内容则改写' : '建议改写（可编辑）'}</label>
+            <label htmlFor={`suggestion-${suggestion.id}`} className="text-xs font-semibold text-muted-foreground">{skillConfirmation ? '确认后将加入技能栏（可编辑）' : target.operation === 'append' ? '新增要点（可编辑）' : target.operation === 'merge' ? '合并后的完整要点（可编辑）' : target.operation === 'delete' ? '删除后留空；填写内容则改写' : '建议改写（可编辑）'}</label>
             <span className="text-xs tabular-nums text-muted-foreground">{edit.length} 字</span>
           </div>
           <Textarea
@@ -628,15 +732,15 @@ function Suggestion({
           <p className="border-t px-3.5 py-3 text-sm leading-6 text-muted-foreground">{suggestion.rationale}</p>
         </details>
 
-        {suggestion.needsUserInput ? <p className="callout-warning">这条内容需要你补充真实信息；编辑后即可接受。</p> : null}
+        {skillConfirmation ? <p className="callout-warning">现有资料没有这项技能。只有你点击“我会”后，它才会写进本次岗位简历。</p> : suggestion.needsUserInput ? <p className="callout-warning">这条内容需要你补充真实信息；编辑后即可接受。</p> : null}
         {actionError ? <p role="alert" className="text-sm text-red-700">{actionError}</p> : null}
       </div>
 
       <footer className="grid gap-2 border-t bg-[#fbfcfe] p-4 sm:grid-cols-[1fr_1.6fr]">
         <Button variant="outline" size="lg" disabled={Boolean(busy)} onClick={() => void update('rejected')}>
-          <X />{busy === 'rejected' ? '保存中…' : '跳过'}
+          <X />{busy === 'rejected' ? '保存中…' : skillConfirmation ? '不会，跳过' : '跳过'}
         </Button>
-        <Button size="lg" disabled={Boolean(busy)} onClick={() => void update('accepted')}>
+        <Button size="lg" disabled={Boolean(busy)} onClick={() => void update('accepted', skillConfirmation)}>
           <Check />{busy === 'accepted' ? '保存中…' : confirmLabel}
         </Button>
       </footer>
