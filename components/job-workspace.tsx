@@ -35,7 +35,7 @@ import {
 } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
 import { normalizeResumeContent, resumeContentToText } from '@/lib/resume-parser';
-import { applyResumeSuggestion, decodeMergeSourceTexts, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
+import { applyResumeSuggestion, decodeMergeSourceTexts, normalizeSuggestedResumeText, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
 
 type WorkspaceVersion = {
   id: string;
@@ -129,6 +129,10 @@ export function JobWorkspace({
   const previewContent = useMemo<ResumeContent | null>(
     () => buildPreviewContent(previewVersion, suggestions, activeSuggestion, drafts),
     [previewVersion, suggestions, activeSuggestion, drafts],
+  );
+  const previewHighlight = useMemo(
+    () => getActivePreviewHighlight(activeSuggestion, drafts, previewContent?.language),
+    [activeSuggestion, drafts, previewContent?.language],
   );
   const existingOutput = data.run?.status === 'finalized' ? branches[0] : null;
   const outputVersion = generatedVersion || existingOutput;
@@ -275,11 +279,11 @@ export function JobWorkspace({
             <ActionSetup base={base} selected={selected} setSelected={setSelected} label="重新生成" busy={busy.includes('/tune')} disabled={!selected} onClick={() => void call(`/api/jobs/${job.id}/tune`, { resumeVersionId: selected })} />
           </section>
 
-          <MobileResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} />
+          <MobileResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} highlightText={previewHighlight} />
 
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.28fr)_minmax(400px,.72fr)]">
             <div className="hidden xl:sticky xl:top-[88px] xl:block">
-              <ResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} />
+              <ResumePreview content={previewContent} resumeName={previewVersion?.resumeName || '简历预览'} active={Boolean(activeSuggestion)} highlightText={previewHighlight} />
             </div>
             <div className="space-y-4">
               {activeSuggestion ? (
@@ -433,7 +437,24 @@ function buildPreviewContent(
   }
 }
 
-function MobileResumePreview({ content, resumeName, active }: { content: ResumeContent | null; resumeName: string; active: boolean }) {
+function getActivePreviewHighlight(
+  active: WorkspaceSuggestion | undefined,
+  drafts: Record<string, string>,
+  language: ResumeContent['language'] | undefined,
+) {
+  if (!active || !language) return '';
+  const target = parseSuggestionSection(active.sectionKey);
+  const draft = drafts[active.id] ?? active.editedText ?? active.proposedText;
+  if (!draft.trim()) return '';
+  return normalizeSuggestedResumeText(
+    target.section,
+    target.operation === 'merge' ? '' : active.originalText,
+    draft,
+    language,
+  );
+}
+
+function MobileResumePreview({ content, resumeName, active, highlightText }: { content: ResumeContent | null; resumeName: string; active: boolean; highlightText: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="xl:hidden">
@@ -444,14 +465,14 @@ function MobileResumePreview({ content, resumeName, active }: { content: ResumeC
             <p className="font-semibold">实时简历预览</p>
             <Button size="sm" variant="outline" onClick={() => setOpen(false)}><X />关闭</Button>
           </div>
-          <div className="h-[calc(100dvh-56px)] overflow-auto p-3"><ResumePreview content={content} resumeName={resumeName} active={active} embedded /></div>
+          <div className="h-[calc(100dvh-56px)] overflow-auto p-3"><ResumePreview content={content} resumeName={resumeName} active={active} highlightText={highlightText} embedded /></div>
         </dialog>
       ) : null}
     </div>
   );
 }
 
-function ResumePreview({ content, resumeName, active, embedded = false }: { content: ResumeContent | null; resumeName: string; active: boolean; embedded?: boolean }) {
+function ResumePreview({ content, resumeName, active, highlightText, embedded = false }: { content: ResumeContent | null; resumeName: string; active: boolean; highlightText: string; embedded?: boolean }) {
   return (
     <section className={cn('overflow-hidden rounded-xl border bg-[#dfe3e8]', embedded && 'border-0')}>
       <div className="flex items-center justify-between border-b bg-white px-4 py-3">
@@ -469,12 +490,12 @@ function ResumePreview({ content, resumeName, active, embedded = false }: { cont
           <article className="mx-auto aspect-[210/297] w-full max-w-[760px] overflow-hidden bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black shadow-[0_10px_26px_-14px_rgb(15_23_42_/_40%)]">
             <Image src="/resume-portrait.jpg" alt="" width={195} height={294} className="float-right mb-2 ml-[5%] aspect-[195/294] w-[11.2%] object-cover" />
             <h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>
-            {content.summary ? <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{content.summary}</p> : null}
-            <PreviewSection title={content.language === 'zh' ? '教育经历' : 'EDUCATION'} lines={content.education} />
-            <PreviewEntries title={content.language === 'zh' ? '实习经历' : 'EXPERIENCE'} entries={content.experiences} language={content.language} />
-            <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} language={content.language} />
-            <PreviewSection title={content.language === 'zh' ? '技能' : 'SKILLS'} lines={content.skills} />
-            <PreviewSection title={content.language === 'zh' ? '其他信息' : 'ADDITIONAL'} lines={content.extras} />
+            {content.summary ? <p className={cn('mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]', isHighlighted(content.summary, highlightText) && 'rounded-r border-l-2 border-emerald-500 bg-emerald-100/80 px-1')} title={isHighlighted(content.summary, highlightText) ? '当前修改位置' : undefined}>{content.summary}</p> : null}
+            <PreviewSection title={content.language === 'zh' ? '教育经历' : 'EDUCATION'} lines={content.education} highlightText={highlightText} />
+            <PreviewEntries title={content.language === 'zh' ? '实习经历' : 'EXPERIENCE'} entries={content.experiences} language={content.language} highlightText={highlightText} />
+            <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} language={content.language} highlightText={highlightText} />
+            <PreviewSection title={content.language === 'zh' ? '技能' : 'SKILLS'} lines={content.skills} highlightText={highlightText} />
+            <PreviewSection title={content.language === 'zh' ? '其他信息' : 'ADDITIONAL'} lines={content.extras} highlightText={highlightText} />
           </article>
         ) : (
           <div className="grid min-h-72 place-items-center rounded-lg border border-dashed border-slate-300 bg-white/60 px-6 text-center text-sm text-muted-foreground">选择基础简历后显示预览</div>
@@ -484,12 +505,12 @@ function ResumePreview({ content, resumeName, active, embedded = false }: { cont
   );
 }
 
-function PreviewSection({ title, lines }: { title: string; lines: string[] }) {
+function PreviewSection({ title, lines, highlightText = '' }: { title: string; lines: string[]; highlightText?: string }) {
   if (!lines.length) return null;
-  return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none">{title}</h2><div className="mt-[3px]">{lines.map((line, index) => <p key={index} className="whitespace-pre-wrap break-words text-[11px] leading-[1.35]">{line}</p>)}</div></section>;
+  return <section className="mt-[7px]"><h2 className="border-b border-black pb-[2px] text-[13px] font-bold leading-none">{title}</h2><div className="mt-[3px]">{lines.map((line, index) => <p key={index} className={cn('whitespace-pre-wrap break-words text-[11px] leading-[1.35]', isHighlighted(line, highlightText) && 'rounded-r border-l-2 border-emerald-500 bg-emerald-100/80 px-1')} title={isHighlighted(line, highlightText) ? '当前修改位置' : undefined}>{line}</p>)}</div></section>;
 }
 
-function PreviewEntries({ title, entries, language }: { title: string; entries: ResumeContent['experiences']; language: ResumeContent['language'] }) {
+function PreviewEntries({ title, entries, language, highlightText }: { title: string; entries: ResumeContent['experiences']; language: ResumeContent['language']; highlightText: string }) {
   if (!entries.length) return null;
   return (
     <section className="mt-[7px]">
@@ -498,7 +519,7 @@ function PreviewEntries({ title, entries, language }: { title: string; entries: 
         {entries.map((entry, index) => (
           <div key={index}>
             <div className="flex items-baseline justify-between gap-3"><p className="text-[11.5px] font-bold leading-[1.3]">{entry.heading}</p><p className="shrink-0 text-[9.5px] font-bold leading-[1.2]">{entry.meta}</p></div>
-            <ul className="mt-[1px]">{entry.bullets.map((bullet, itemIndex) => <PreviewBullet key={itemIndex} bullet={bullet} language={language} />)}</ul>
+            <ul className="mt-[1px]">{entry.bullets.map((bullet, itemIndex) => <PreviewBullet key={itemIndex} bullet={bullet} language={language} highlighted={isHighlighted(bullet, highlightText)} />)}</ul>
           </div>
         ))}
       </div>
@@ -506,17 +527,22 @@ function PreviewEntries({ title, entries, language }: { title: string; entries: 
   );
 }
 
-function PreviewBullet({ bullet, language }: { bullet: string; language: ResumeContent['language'] }) {
+function PreviewBullet({ bullet, language, highlighted }: { bullet: string; language: ResumeContent['language']; highlighted: boolean }) {
   const { lead, rest } = resumeBulletParts(bullet, language);
   return (
-    <li className="flex gap-2 text-[11px] leading-[1.35]">
+    <li className={cn('flex gap-2 text-[11px] leading-[1.35]', highlighted && 'rounded-r border-l-2 border-emerald-500 bg-emerald-100/80 px-1')} title={highlighted ? '当前修改位置' : undefined}>
       <span aria-hidden="true">-</span>
       <span><strong>{lead}</strong>{language === 'en' ? ' ' : ''}{rest}</span>
     </li>
   );
 }
 
+function isHighlighted(value: string, highlightText: string) {
+  return Boolean(highlightText) && value.trim().replace(/\s+/g, ' ') === highlightText.trim().replace(/\s+/g, ' ');
+}
+
 type ChatMessage = { role: 'user' | 'assistant'; content: string };
+type DiffPart = { value: string; kind: 'same' | 'added' | 'removed' };
 
 function JobAiChat({ jobId, resumeVersionId }: { jobId: string; resumeVersionId: string }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -606,6 +632,111 @@ function JobAiChat({ jobId, resumeVersionId }: { jobId: string; resumeVersionId:
         <p className="mt-2 text-xs text-muted-foreground">当前页面会话，刷新后清空；回答仅供参考，不会自动接受建议或写入简历。</p>
       </div>
     </details>
+  );
+}
+
+function tokenizeDiffText(value: string) {
+  if (!value) return [];
+  if (typeof Intl.Segmenter === 'function') {
+    return Array.from(new Intl.Segmenter('zh-CN', { granularity: 'word' }).segment(value), (part) => part.segment);
+  }
+  return value.match(/[\p{Script=Han}]|[A-Za-z0-9]+(?:[.+#/-][A-Za-z0-9]+)*|\s+|./gu) || [];
+}
+
+function diffText(before: string, after: string): DiffPart[] {
+  const oldTokens = tokenizeDiffText(before);
+  const newTokens = tokenizeDiffText(after);
+  if (!oldTokens.length) return after ? [{ value: after, kind: 'added' }] : [];
+  if (!newTokens.length) return before ? [{ value: before, kind: 'removed' }] : [];
+  if (oldTokens.length * newTokens.length > 120_000) {
+    return [
+      { value: before, kind: 'removed' },
+      { value: after, kind: 'added' },
+    ];
+  }
+
+  const lengths = Array.from({ length: oldTokens.length + 1 }, () => new Uint16Array(newTokens.length + 1));
+  for (let oldIndex = oldTokens.length - 1; oldIndex >= 0; oldIndex -= 1) {
+    for (let newIndex = newTokens.length - 1; newIndex >= 0; newIndex -= 1) {
+      lengths[oldIndex][newIndex] = oldTokens[oldIndex] === newTokens[newIndex]
+        ? lengths[oldIndex + 1][newIndex + 1] + 1
+        : Math.max(lengths[oldIndex + 1][newIndex], lengths[oldIndex][newIndex + 1]);
+    }
+  }
+
+  const parts: DiffPart[] = [];
+  const push = (value: string, kind: DiffPart['kind']) => {
+    const previous = parts.at(-1);
+    if (previous?.kind === kind) previous.value += value;
+    else parts.push({ value, kind });
+  };
+  let oldIndex = 0;
+  let newIndex = 0;
+  while (oldIndex < oldTokens.length && newIndex < newTokens.length) {
+    if (oldTokens[oldIndex] === newTokens[newIndex]) {
+      push(oldTokens[oldIndex], 'same');
+      oldIndex += 1;
+      newIndex += 1;
+    } else if (lengths[oldIndex + 1][newIndex] >= lengths[oldIndex][newIndex + 1]) {
+      push(oldTokens[oldIndex], 'removed');
+      oldIndex += 1;
+    } else {
+      push(newTokens[newIndex], 'added');
+      newIndex += 1;
+    }
+  }
+  while (oldIndex < oldTokens.length) push(oldTokens[oldIndex++], 'removed');
+  while (newIndex < newTokens.length) push(newTokens[newIndex++], 'added');
+  return parts;
+}
+
+function DiffText({ parts, side, emptyText }: { parts: DiffPart[]; side: 'before' | 'after'; emptyText: string }) {
+  const visible = parts.filter((part) => side === 'before' ? part.kind !== 'added' : part.kind !== 'removed');
+  if (!visible.length) return <span className="italic text-muted-foreground">{emptyText}</span>;
+  return visible.map((part, index) => {
+    if (part.kind === 'same') return <span key={index}>{part.value}</span>;
+    return (
+      <mark
+        key={index}
+        className={cn(
+          'rounded-sm px-0.5 py-0.5 text-inherit',
+          part.kind === 'removed'
+            ? 'bg-red-100 text-red-800 line-through decoration-red-500'
+            : 'bg-emerald-100 text-emerald-900 underline decoration-emerald-500 decoration-2 underline-offset-2',
+        )}
+      >
+        {part.value}
+      </mark>
+    );
+  });
+}
+
+function SuggestionDiff({ sourceTexts, proposedText, operation }: { sourceTexts: string[]; proposedText: string; operation: ReturnType<typeof parseSuggestionSection>['operation'] }) {
+  const before = operation === 'append'
+    ? ''
+    : sourceTexts.map((text, index) => operation === 'merge' ? `${index + 1}. ${text}` : text).join('\n');
+  const after = proposedText.trim();
+  const parts = useMemo(() => diffText(before, after), [after, before]);
+  return (
+    <section aria-label="修改前后对比">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-muted-foreground">前后差异</p>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground" aria-hidden="true">
+          <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-red-200" />删除</span>
+          <span className="inline-flex items-center gap-1"><span className="size-2 rounded-sm bg-emerald-200" />新增</span>
+        </div>
+      </div>
+      <div className="mt-2 grid overflow-hidden rounded-xl border bg-white md:grid-cols-2">
+        <div className="border-b p-3.5 md:border-b-0 md:border-r">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-red-700">修改前</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[#58657a]"><DiffText parts={parts} side="before" emptyText={operation === 'append' ? '原简历没有这条内容' : '无内容'} /></p>
+        </div>
+        <div className="bg-emerald-50/35 p-3.5">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">修改后</p>
+          <p className="whitespace-pre-wrap break-words text-sm leading-6 text-[#354057]"><DiffText parts={parts} side="after" emptyText={operation === 'delete' ? '此条将从简历中删除' : '无内容'} /></p>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -704,14 +835,7 @@ function Suggestion({
           <p className="mt-2 rounded-lg border border-blue-200 bg-[#f5f8ff] px-3.5 py-3 text-sm leading-6 text-[#244579]">{suggestion.matchedRequirement}</p>
         </section>
 
-        {sourceTexts.length ? (
-          <section>
-            <p className="text-xs font-semibold text-muted-foreground">{target.operation === 'append' ? '添加到这段经历 / 项目' : target.operation === 'merge' ? `准备合并的 ${sourceTexts.length} 条内容` : target.operation === 'delete' ? '准备删除的内容' : '当前简历表述'}</p>
-            <div className="mt-2 space-y-2 rounded-lg bg-slate-50 px-3.5 py-3 text-sm leading-6 text-[#58657a]">
-              {sourceTexts.map((text, index) => <p key={`${index}-${text}`}>{target.operation === 'merge' ? `${index + 1}. ` : ''}{text}</p>)}
-            </div>
-          </section>
-        ) : null}
+        <SuggestionDiff sourceTexts={sourceTexts} proposedText={edit} operation={target.operation} />
 
         <section>
           <div className="flex items-center justify-between gap-2">
