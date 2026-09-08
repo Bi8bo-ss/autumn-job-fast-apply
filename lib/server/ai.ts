@@ -7,6 +7,7 @@ import type {
   Profile,
   ResumeContent,
 } from '@/lib/product-types';
+import { isLikelySupplementalNoise } from '@/lib/resume-parser';
 import {
   applyResumeSuggestion,
   canEditResumeText,
@@ -307,6 +308,7 @@ export async function tuneResumeWithAi({
       '新增经历或项目要点只能整合该段经历本身及候选人事实库中明确支持的事实，绝不能把另一段经历的职责或成果挪过来，也不能仅凭 JD 新造行业经验。证据不足时不要新增；确实值得询问用户时才设置 needsUserInput=true。',
       'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把同一任务链的事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，不得把无关主题硬塞进同一点，也不得跨公司或跨项目合并。',
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
+      '技能和其他信息也必须保持整洁：主动删除重复词、解析残片、无意义关键词堆叠和无法构成完整信息的孤立短句，例如“项目统筹统筹物流项目协调”。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
       '优先使用 merge 完成“多条碎片合成一条”，不要用多条 replace 制造更多要点。不得因为 JD 没提某项就机械删除；只有删除或合并后能明显提升岗位针对性、内容深度或信息密度时才建议。',
       '除 merge 外，mergedOriginalTexts 必须为空数组。任何一个原始要点最多只能被一个 replace、merge 或 delete 建议使用，避免建议之间互相覆盖。',
       '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
@@ -342,6 +344,10 @@ export async function tuneResumeWithAi({
       content.language,
     );
     if (operation !== 'delete' && !suggestion.proposedText) return false;
+    if (operation !== 'delete' && (section === 'skills' || section === 'extras')) {
+      if (!/^[^：:\n]{2,20}[：:]\s*\S+/.test(suggestion.proposedText)
+        || isLikelySupplementalNoise(suggestion.proposedText, content.language)) return false;
+    }
     if (operation !== 'delete' && suggestion.proposedText === suggestion.originalText.trim()) return false;
     if (/\[(?:邮箱|手机号|证件号|敏感字段)已隐藏\]/.test(suggestion.proposedText)) return false;
     if ((section === 'experience' || section === 'project')) {

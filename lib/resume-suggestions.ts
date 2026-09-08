@@ -1,4 +1,5 @@
 import type { ResumeContent } from '@/lib/product-types';
+import { isLikelySupplementalNoise } from '@/lib/resume-parser';
 
 export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete' | 'merge';
 export type ResumeSuggestionSection = 'summary' | 'experience' | 'project' | 'skills' | 'extras';
@@ -58,6 +59,7 @@ export function applyResumeSuggestion(
   if (target.operation === 'append') {
     if (!nextText) return content;
     if (target.section === 'skills' || target.section === 'extras') {
+      if (isLikelySupplementalNoise(nextText, source.language)) return content;
       const lines = target.section === 'skills' ? content.skills : content.extras;
       if (!lines.some((line) => line.trim() === nextText)) lines.push(nextText);
       return content;
@@ -86,6 +88,8 @@ export function applyResumeSuggestion(
   }
 
   if (!originalText || !nextText) return content;
+  if ((target.section === 'skills' || target.section === 'extras')
+    && isLikelySupplementalNoise(nextText, source.language)) return content;
   return replaceSectionText(content, target.section, originalText, nextText);
 }
 

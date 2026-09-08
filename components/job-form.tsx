@@ -115,7 +115,7 @@ export function JobForm({ resumes }: { resumes: ResumeRecord[] }) {
               placeholder={'直接粘贴招聘官网或招聘软件里的完整 JD…\n\n例如：\n公司名称：某某科技\n招聘岗位：产品经理实习生\n岗位职责：…'}
             />
             <div className="mt-2 flex items-center justify-between gap-4 text-xs text-muted-foreground">
-              <span>{resumeCount ? `将从 ${resumeCount} 份基础简历中自动匹配` : '没有基础简历也可先保存岗位'}</span>
+              <span>{resumeCount ? `将从 ${resumeCount} 份原始基础简历中自动匹配` : '没有基础简历也可先保存岗位'}</span>
               <span className="tabular-nums">{jd.length.toLocaleString()} / 40,000</span>
             </div>
           </div>

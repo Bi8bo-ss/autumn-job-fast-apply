@@ -45,6 +45,41 @@ function cleanBodyLine(value: string) {
   return cleanLine(value).replace(/([\u3400-\u9fff]) (?=[\u3400-\u9fff])/g, '$1');
 }
 
+export function isLikelySupplementalNoise(value: string, language: Language) {
+  const line = cleanBodyLine(value);
+  if (!line || /^[^：:]{1,20}[：:]\s*$/.test(line) || /�/.test(line)) return true;
+  const compact = line.replace(/\s+/g, '').toLowerCase();
+
+  if (language === 'zh') {
+    for (let size = 2; size <= Math.min(6, Math.floor(compact.length / 2)); size += 1) {
+      for (let index = 0; index + size * 2 <= compact.length; index += 1) {
+        if (compact.slice(index, index + size) === compact.slice(index + size, index + size * 2)) return true;
+      }
+    }
+    if (!/[：:，,、；;（）()/]/.test(line) && line.length >= 8 && line.length <= 40) {
+      const keywordCount = (line.match(/项目|统筹|物流|协调|运营|管理|分析|数据|业务|用户|流程|策略|研究|能力|技能/g) || []).length;
+      if (keywordCount >= 3) return true;
+    }
+  } else if (/\b([a-z][a-z-]{2,})\s+\1\b/i.test(line)) {
+    return true;
+  }
+
+  return false;
+}
+
+function cleanSupplementalLines(lines: string[], language: Language) {
+  const seen = new Set<string>();
+  return lines
+    .map(cleanBodyLine)
+    .filter((line) => !isLikelySupplementalNoise(line, language))
+    .filter((line) => {
+      const key = line.replace(/\s+/g, '').toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 function prepareLines(text: string) {
   let prepared = text
     .replace(/\u0000/g, '')
@@ -188,8 +223,8 @@ export function parseResumeText(text: string, language: Language): ResumeContent
     education: splitList(buckets.education),
     experiences: parseEntries(buckets.experiences),
     projects: parseEntries(buckets.projects),
-    skills: splitList(buckets.skills),
-    extras: [...overflow, ...splitList(buckets.extras)],
+    skills: cleanSupplementalLines(splitList(buckets.skills), language),
+    extras: cleanSupplementalLines([...overflow, ...splitList(buckets.extras)], language),
   };
 }
 
@@ -226,7 +261,7 @@ export function normalizeResumeContent(content: ResumeContent, sourceText?: stri
     education: parsed.education.map(cleanLine).filter(Boolean),
     experiences: parsed.experiences.map(normalizeEntry),
     projects: parsed.projects.map(normalizeEntry),
-    skills: parsed.skills.map(cleanBodyLine).filter(Boolean),
-    extras: parsed.extras.map(cleanBodyLine).filter(Boolean),
+    skills: cleanSupplementalLines(parsed.skills, parsed.language),
+    extras: cleanSupplementalLines(parsed.extras, parsed.language),
   };
 }

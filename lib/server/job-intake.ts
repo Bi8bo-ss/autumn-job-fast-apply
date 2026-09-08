@@ -66,9 +66,14 @@ export function extractJobMetadata(jd: string) {
 
 export async function matchResumeVersion(userId: string, jd: string, language: 'zh' | 'en') {
   const result = await db().prepare(`SELECT r.id AS resumeId, r.name AS resumeName,
-    r.current_version_id AS resumeVersionId, r.language, rv.source_text AS sourceText
-    FROM resumes r JOIN resume_versions rv ON rv.id = r.current_version_id
-    WHERE r.user_id = ? AND r.current_version_id IS NOT NULL`).bind(userId).all<MatchedResume>();
+    rv.id AS resumeVersionId, r.language, rv.source_text AS sourceText
+    FROM resumes r JOIN resume_versions rv ON rv.id = (
+      SELECT original.id FROM resume_versions original
+      WHERE original.user_id = r.user_id AND original.resume_id = r.id
+        AND original.job_id IS NULL AND original.parent_version_id IS NULL
+      ORDER BY original.version_number ASC, original.created_at ASC LIMIT 1
+    )
+    WHERE r.user_id = ?`).bind(userId).all<MatchedResume>();
   if (!result.results.length) return null;
 
   const jdLower = jd.toLowerCase();

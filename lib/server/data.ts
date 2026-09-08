@@ -123,6 +123,23 @@ export async function getResumeVersion(userId: string, versionId: string) {
     }>();
 }
 
+export async function getOriginalResumeVersion(userId: string, requestedVersionId: string) {
+  const requested = await getResumeVersion(userId, requestedVersionId);
+  if (!requested) return null;
+
+  return db()
+    .prepare(`SELECT rv.id, rv.resume_id AS resumeId, rv.job_id AS jobId,
+      rv.parent_version_id AS parentVersionId, rv.version_number AS versionNumber,
+      rv.content_json AS contentJson, rv.source_text AS sourceText,
+      rv.created_at AS createdAt, r.name AS resumeName, r.language
+      FROM resume_versions rv JOIN resumes r ON r.id = rv.resume_id
+      WHERE rv.user_id = ? AND rv.resume_id = ?
+        AND rv.job_id IS NULL AND rv.parent_version_id IS NULL
+      ORDER BY rv.version_number ASC, rv.created_at ASC LIMIT 1`)
+    .bind(userId, requested.resumeId)
+    .first<typeof requested>();
+}
+
 export function contentFromText(text: string, language: 'zh' | 'en'): ResumeContent {
   return parseResumeText(text, language);
 }

@@ -95,12 +95,16 @@ export function JobWorkspace({
 }) {
   const router = useRouter();
   const { job, versions } = data;
-  const base = versions.filter((version) => !version.jobId);
+  const base = versions
+    .filter((version) => !version.jobId && !version.parentVersionId)
+    .filter((version, _index, roots) => !roots.some((candidate) => candidate.resumeId === version.resumeId
+      && candidate.versionNumber < version.versionNumber));
   const branches = versions.filter((version) => version.jobId === job.id);
+  const runBase = base.find((version) => version.id === data.run?.resumeVersionId);
   const safeInitialTab = workspaceTabs.some((item) => item.id === initialTab) ? initialTab as WorkspaceTab : 'job';
   const noticeText = getNotice(initialNotice);
   const [tab, setTab] = useState<WorkspaceTab>(safeInitialTab);
-  const [selected, setSelected] = useState(data.run?.resumeVersionId || base[0]?.id || '');
+  const [selected, setSelected] = useState(runBase?.id || base[0]?.id || '');
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState(noticeText);
   const [error, setError] = useState('');
@@ -119,7 +123,7 @@ export function JobWorkspace({
   const activeSuggestion = suggestions.find((item) => item.state === 'pending');
   const processedSuggestions = suggestions.filter((item) => item.state !== 'pending');
   const activeNumber = activeSuggestion ? suggestions.findIndex((item) => item.id === activeSuggestion.id) + 1 : suggestions.length;
-  const previewVersion = versions.find((item) => item.id === (data.run?.resumeVersionId || selected)) || base[0];
+  const previewVersion = runBase || base.find((item) => item.id === selected) || base[0];
   const previewContent = useMemo<ResumeContent | null>(
     () => buildPreviewContent(previewVersion, suggestions, activeSuggestion, drafts),
     [previewVersion, suggestions, activeSuggestion, drafts],
@@ -264,7 +268,7 @@ export function JobWorkspace({
                 {analysis ? <span className="rounded-md bg-[#edf3ff] px-2.5 py-1 text-xs font-semibold text-primary">岗位匹配 {analysis.score}%</span> : null}
                 {suggestions.length ? <span className="text-xs font-medium text-muted-foreground">当前建议 {activeNumber} / {suggestions.length}</span> : null}
               </div>
-              <p className="mt-1 text-sm text-muted-foreground">逐条新增、删除、合并或改写；经历与项目统一为“加粗短标题：正文”。</p>
+              <p className="mt-1 text-sm text-muted-foreground">每次都从导入的原始基础版重新开始，不叠加任何岗位版修改；再逐条新增、删除、合并或改写。</p>
             </div>
             <ActionSetup base={base} selected={selected} setSelected={setSelected} label="重新生成" busy={busy.includes('/tune')} disabled={!selected} onClick={() => void call(`/api/jobs/${job.id}/tune`, { resumeVersionId: selected })} />
           </section>
@@ -394,8 +398,8 @@ function ActionSetup({
   return (
     <div className="flex flex-col gap-2 sm:flex-row">
       <select value={selected} onChange={(event) => setSelected(event.target.value)} className="h-10 min-w-48 rounded-lg border bg-white px-3 text-sm">
-        <option value="">选择基础简历</option>
-        {base.map((version) => <option key={version.id} value={version.id}>{version.resumeName} v{version.versionNumber}</option>)}
+        <option value="">选择原始基础简历</option>
+        {base.map((version) => <option key={version.id} value={version.id}>{version.resumeName} · 原始版</option>)}
       </select>
       <Button onClick={onClick} disabled={disabled || busy}><Sparkles />{busy ? '处理中…' : label}</Button>
     </div>
@@ -448,8 +452,8 @@ function ResumePreview({ content, resumeName, active, embedded = false }: { cont
     <section className={cn('overflow-hidden rounded-xl border bg-[#dfe3e8]', embedded && 'border-0')}>
       <div className="flex items-center justify-between border-b bg-white px-4 py-3">
         <div>
-          <p className="text-sm font-semibold">基础简历：{resumeName}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">A4 预览 · 单页自适应</p>
+          <p className="text-sm font-semibold">原始基础简历：{resumeName}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">本次从原版生成 · A4 单页自适应</p>
         </div>
         <span className={cn('inline-flex items-center gap-2 text-xs font-medium', active ? 'text-emerald-700' : 'text-muted-foreground')}>
           <span className={cn('status-dot', active ? 'bg-emerald-500' : 'bg-slate-400')} />
