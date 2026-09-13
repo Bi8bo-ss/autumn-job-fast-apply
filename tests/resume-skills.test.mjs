@@ -5,6 +5,7 @@ import { applyResumeSuggestion } from '../lib/resume-suggestions.ts';
 import { mergeResumeSkillLines, removesExistingSkills, removeExistingSkillNames, skillNames } from '../lib/resume-skills.ts';
 import { buildResumeHtml, buildResumeTex, packResumeDocument } from '../lib/resume-export.ts';
 import { buildResumePreviewContent } from '../lib/resume-preview.ts';
+import { textFromPdfItems } from '../lib/resume-pdf.ts';
 
 // Transcribed skill content from the user's original screenshot; no identity data.
 const software = ['BigQuery', 'MySQL', 'SQL', 'Python', 'Looker Studio', 'Excel', 'Microsoft 办公', 'Power BI', 'R', 'HTML5', 'CSS'];
@@ -45,6 +46,41 @@ await test('entering tuning before any suggestion restores a missing professiona
   const preview = buildResumePreviewContent({ contentJson: JSON.stringify(damaged), sourceText: source }, [], undefined, {});
   allOriginalSkillsPresent(preview);
   assert.equal(preview.skills.length, 3);
+});
+
+// Exact skills text layer from the supplied PDF, excluding all identity data.
+const actualPdfSkills = '技能\n\n语言 ： 中 文（ 母语 ）， 英语 （ 精通 ， 可用作 工 作 语言 ）；\n\n软件 ：BigQuery，MySQL，SQL，Python，Looker Studio，Excel，Microsoft  办公 ，Power BI，R，HTML5，CSS；\n\n专业 ：数据建模，ERD 与数据库设计，数据 挖掘 ，业务流程建模，PRD, 项目管理， 招 标 书 ，Business Metrics Analysis，User\nBehavior Analysis，数据驱动 决 策 。\n\n项目统筹\n\n统筹物流\n\n项目协调\n';
+
+await test('actual PDF text layer restores all professional skills without absorbing late-painted experience labels', () => {
+  const legacySource = `示例姓名\n${actualPdfSkills}`;
+  for (const text of [legacySource, legacySource.replace(/\n+/g, '  ')]) {
+    const parsed = parseResumeText(text, 'zh');
+    allOriginalSkillsPresent(parsed);
+    const damaged = { ...parsed, skills: parsed.skills.filter((line) => !line.startsWith('专业')) };
+    const preview = buildResumePreviewContent({ contentJson: JSON.stringify(damaged), sourceText: text }, [], undefined, {});
+    allOriginalSkillsPresent(preview);
+    assert.equal(preview.skills.flatMap(skillNames).length, 23);
+    assert.ok(!preview.skills.join('\n').includes('项目统筹'));
+    allOriginalSkillsPresent(normalizeResumeContent(preview, resumeContentToText(preview)));
+  }
+});
+
+await test('PDF text extraction puts late-painted labels back beside their original bullets', () => {
+  const item = (str, x, y, width = str.length * 8.6) => ({ str, transform: [8.6, 0, 0, 8.6, x, y], width, height: 8.6 });
+  const extracted = textFromPdfItems([
+    item('- ', 45, 641, 6.6), item('：深度参与集团项目', 86, 641),
+    item('专业：数据驱动决策。', 45, 56),
+    item('项目统筹', 51.6, 641, 34.4),
+  ]);
+  assert.equal(extracted, '- 项目统筹：深度参与集团项目\n专业：数据驱动决策。');
+  assert.ok(!extracted.endsWith('项目统筹'));
+  assert.equal(textFromPdfItems([{ str: 'Tools: SQL', hasEOL: true }, { str: 'Python' }]), 'Tools: SQL\nPython');
+});
+
+await test('PDF font fragments preserve adjacent identifier punctuation and real word spacing', () => {
+  const item = (str, x, width) => ({ str, transform: [8.6, 0, 0, 8.6, x, 100], width, height: 8.6 });
+  assert.equal(textFromPdfItems([item('Python', 75, 28), item('++', 50, 10), item('C', 45, 5)]), 'C++ Python');
+  assert.equal(textFromPdfItems([{ str: 'SQL', transform: [1, 0, 0, 1, NaN, 100] }, { str: 'Python' }]), 'SQL Python');
 });
 
 await test('PDF spaces inside project management cannot turn a professional skill into a section heading', () => {

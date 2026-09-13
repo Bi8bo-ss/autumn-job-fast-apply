@@ -80,7 +80,13 @@ export function isLikelySupplementalNoise(value: string, language: Language) {
 }
 
 export function normalizeResumeSkillLine(value: string, language: Language) {
-  const line = cleanBodyLine(value);
+  let line = cleanBodyLine(value);
+  // Old PDF imports appended out-of-order experience labels after the final
+  // sentence of a labeled skill row. Remove only a noisy suffix, never its facts.
+  const end = line.lastIndexOf('。');
+  const suffix = end >= 0 ? line.slice(end + 1).trim() : '';
+  if (/^[^：:]{1,32}[：:]/.test(line) && suffix && !/[：:]/.test(suffix)
+    && isLikelySupplementalNoise(suffix, language)) line = line.slice(0, end + 1);
   const match = line.match(/^(?:技能确认|待确认技能|skill confirmation|skill check)\s*[：:]\s*(.+)$/i);
   if (!match) return line;
   const skill = match[1].trim();

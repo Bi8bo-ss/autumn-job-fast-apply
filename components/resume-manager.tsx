@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import type { ResumeRecord } from '@/lib/server/data';
+import { textFromPdfItems } from '@/lib/resume-pdf';
 
 type Version = {
   id: string;
@@ -23,25 +24,6 @@ type Version = {
 };
 
 type ImportResponse = { error?: string };
-
-function textFromPdfItems(items: Array<unknown>) {
-  let output = '';
-  let lastY: number | null = null;
-  for (const raw of items) {
-    if (!raw || typeof raw !== 'object' || !('str' in raw)) continue;
-    const item = raw as { str: string; transform?: number[]; hasEOL?: boolean };
-    const y = Array.isArray(item.transform) ? Number(item.transform[5]) : null;
-    const changedLine = lastY !== null && y !== null && Math.abs(lastY - y) > 2;
-    if (changedLine && !output.endsWith('\n')) output += '\n';
-    else if (output && !output.endsWith('\n') && item.str && !/^\s/.test(item.str)) output += ' ';
-    output += item.str;
-    if (item.hasEOL) {
-      output += '\n';
-      lastY = null;
-    } else if (y !== null) lastY = y;
-  }
-  return output;
-}
 
 export function ResumeManager({ resumes, versions }: { resumes: ResumeRecord[]; versions: Version[] }) {
   const router = useRouter();
@@ -70,7 +52,7 @@ export function ResumeManager({ resumes, versions }: { resumes: ResumeRecord[]; 
         for (let index = 1; index <= doc.numPages; index++) {
           const page = await doc.getPage(index);
           const content = await page.getTextContent();
-          output += textFromPdfItems(content.items as Array<unknown>) + '\n';
+          output += textFromPdfItems(content.items, page.getViewport({ scale: 1 }).transform) + '\n';
         }
         await loadingTask.destroy();
         if (output.trim().length < 30) throw new Error('这份 PDF 可能是图片扫描件，未提取到有效文字。请改传 DOCX 或可复制文本。');
