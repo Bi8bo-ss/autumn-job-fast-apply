@@ -52,7 +52,7 @@ const tuneOutputSchema = z.object({
 type TuneOutput = z.infer<typeof tuneOutputSchema>;
 
 const applicationNarrativesSchema = z.object({
-  selfEvaluation: z.string(),
+  selfEvaluation: z.string().min(300, '自我评价至少需要 300 个字符。'),
   selfIntroduction: z.string(),
   motivation: z.string(),
 });
@@ -132,7 +132,7 @@ const JSON_SCHEMAS = {
     additionalProperties: false,
     required: ['selfEvaluation', 'selfIntroduction', 'motivation'],
     properties: {
-      selfEvaluation: { type: 'string' },
+      selfEvaluation: { type: 'string', minLength: 300 },
       selfIntroduction: { type: 'string' },
       motivation: { type: 'string' },
     },
@@ -561,8 +561,12 @@ export async function generateApplicationNarrativesWithAi({
     [
       '根据岗位描述、当前岗位版简历和候选人已确认事实，生成三个互不重复、可直接粘贴到招聘官网的文本：自我评价、个人自我介绍、岗位动机。',
       '先从 JD 中提取最重要的 2 至 3 个工作任务或能力要求，再只选择简历中有明确证据的经历、技能和结果与之对应。不要平均罗列所有经历。',
-      'selfEvaluation 是简历/官网中的“自我评价”，不是经历摘要：只写两句话。第一句用第一人称概括与本岗位最相关的能力定位和工作方式；第二句只选一条简历证据说明这种能力如何被验证，并落到目标岗位。中文 70 至 110 字，英文 50 至 75 词。',
-      'selfEvaluation 必须短而有判断：最多 2 句话、最多 1 个具体项目/公司、最多 2 组并列项；禁止用分号串联多个项目，禁止连续罗列“指标、数据、看板、实验”等名词，禁止把多段经历压缩成流水账。除非 JD 明确要求，否则不要写公司名。',
+      language === 'zh'
+        ? 'selfEvaluation 是简历/官网中的“自我评价”，不是经历摘要：必须写 300 至 420 个中文字符，分成 3 个自然段、5 至 7 句话。第一段概括职业方向、工作方式，以及与 JD 最相关的 2 至 3 项能力；第二段解释这些能力如何通过简历中已有的工作结果得到验证，但只能用不指名的方式点到为止；第三段说明这些能力如何转化为对目标岗位的具体贡献。'
+        : 'selfEvaluation is a resume/profile summary, not a project history: write 180 to 260 words in 3 short paragraphs and 5 to 7 sentences. Paragraph one states the candidate\'s direction, working approach, and 2 to 3 capabilities most relevant to the JD; paragraph two briefly and anonymously grounds them in resume evidence; paragraph three explains the concrete value these capabilities can bring to the target role.',
+      'selfEvaluation 必须体现“JD要求 → 候选人能力 → 简历事实支撑 → 岗位贡献”的匹配链路。不要只重复 JD，也不要只罗列个人优点；每一段都要解释为什么匹配。',
+      'selfEvaluation 严禁直接提到任何项目名、实习单位、公司名、客户名或具体经历名称，也不要写“在某项目中”“在某段实习中”“在某公司期间”等经历复述。可以使用“在相关业务实践中”“在实际工作场景中”等不指名表达，但只能点到为止，不得展开成项目流水账。',
+      'selfEvaluation 不要用分号串联多个场景，不要连续堆砌“指标、数据、看板、实验”等名词；要把并列概念改写成清楚的因果关系、工作方法和岗位价值。不得写“学习能力强、责任心强、沟通能力好”等没有事实支撑的套话。',
       'selfIntroduction 使用第一人称，适合官网填写或 60 秒口头介绍；中文 140 至 200 字，英文 90 至 130 词。开头直接说明当前方向，随后用 1 至 2 段最相关经历证明能力，结尾落到本岗位能解决什么问题；避免逐条复述简历。',
       'motivation 中文 100 至 170 字，英文 70 至 110 词；只说明候选人已有经历如何连接岗位任务，以及希望在岗位中继续贡献或验证什么，避免空泛赞美公司。',
       '三个文本都必须具体、克制、有岗位指向：每个文本至少出现一个来自 JD 的任务/能力方向，并至少对应一项简历事实；若没有足够证据，明确使用“接触过/参与过/希望继续提升”等表述。',
