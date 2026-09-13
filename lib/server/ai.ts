@@ -52,6 +52,7 @@ const tuneOutputSchema = z.object({
 type TuneOutput = z.infer<typeof tuneOutputSchema>;
 
 const applicationNarrativesSchema = z.object({
+  selfEvaluation: z.string(),
   selfIntroduction: z.string(),
   motivation: z.string(),
 });
@@ -129,8 +130,9 @@ const JSON_SCHEMAS = {
   applicationNarratives: {
     type: 'object',
     additionalProperties: false,
-    required: ['selfIntroduction', 'motivation'],
+    required: ['selfEvaluation', 'selfIntroduction', 'motivation'],
     properties: {
+      selfEvaluation: { type: 'string' },
       selfIntroduction: { type: 'string' },
       motivation: { type: 'string' },
     },
@@ -557,10 +559,13 @@ export async function generateApplicationNarrativesWithAi({
     JSON_SCHEMAS.applicationNarratives,
     applicationNarrativesSchema,
     [
-      '根据候选人已确认事实、简历和岗位描述，同时生成个人自我介绍与求职动机。',
-      'selfIntroduction 使用第一人称，适合官网填写或 60 秒口头介绍；中文 180 至 280 字，英文 110 至 170 词。依次覆盖教育/方向、最匹配经历、核心能力、岗位连接，避免逐条复述简历。',
-      'motivation 中文 150 至 240 字，英文 100 至 160 词；重点说明已有经历与岗位任务的连接，避免空泛赞美。',
-      '不得补充输入之外的公司事实、个人经历或成绩。',
+      '根据岗位描述、当前岗位版简历和候选人已确认事实，生成三个互不重复、可直接粘贴到招聘官网的文本：自我评价、个人自我介绍、岗位动机。',
+      '先从 JD 中提取最重要的 2 至 3 个工作任务或能力要求，再只选择简历中有明确证据的经历、技能和结果与之对应。不要平均罗列所有经历。',
+      'selfEvaluation 是简历/官网中的“自我评价”：第一人称，突出与本岗位最相关的工作方式、能力组合和可验证证据；中文 80 至 130 字，英文 55 至 90 词。不要写“学习能力强、责任心强、沟通能力好”等没有证据的套话。',
+      'selfIntroduction 使用第一人称，适合官网填写或 60 秒口头介绍；中文 140 至 200 字，英文 90 至 130 词。开头直接说明当前方向，随后用 1 至 2 段最相关经历证明能力，结尾落到本岗位能解决什么问题；避免逐条复述简历。',
+      'motivation 中文 100 至 170 字，英文 70 至 110 词；只说明候选人已有经历如何连接岗位任务，以及希望在岗位中继续贡献或验证什么，避免空泛赞美公司。',
+      '三个文本都必须具体、克制、有岗位指向：每个文本至少出现一个来自 JD 的任务/能力方向，并至少对应一项简历事实；若没有足够证据，明确使用“接触过/参与过/希望继续提升”等表述。',
+      '不得补充输入之外的公司事实、个人经历、技能、数字或成绩。不得把 JD 要求写成候选人已经掌握的能力。',
       '不得输出邮箱、手机号、地址、证件号等联系方式；证据不足时使用克制表述，不得猜测。',
       `输出语言：${language === 'zh' ? '中文' : '英文'}。`,
     ].join('\n'),

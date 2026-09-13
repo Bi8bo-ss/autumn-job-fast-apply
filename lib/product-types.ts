@@ -217,6 +217,7 @@ export type MaterialGroup = {
 
 export type ApplicationPackContent = {
   groups: MaterialGroup[];
+  selfEvaluation: string;
   selfIntroduction: string;
   motivation: string;
   missingFields: string[];

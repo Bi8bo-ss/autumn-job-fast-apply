@@ -29,6 +29,7 @@ export async function buildApplicationPack(userId: string, jobId: string) {
 
   const resume = parseResume(version);
   const resumeSource = version?.jobId ? '岗位简历' : '基础简历';
+  let selfEvaluation = '';
   let selfIntroduction = '';
   let motivation = '';
   try {
@@ -38,6 +39,7 @@ export async function buildApplicationPack(userId: string, jobId: string) {
       jd: job.jd,
       language: job.language,
     });
+    selfEvaluation = generated.selfEvaluation;
     selfIntroduction = generated.selfIntroduction;
     motivation = generated.motivation;
   } catch {
@@ -77,7 +79,8 @@ export async function buildApplicationPack(userId: string, jobId: string) {
   const experiences = prefer(profileExperiences, resumeExperiences);
   const projects = prefer(profileProjects, resumeProjects);
   const skills = prefer(profile.skills.join('，'), resume?.skills.join('\n') || '');
-  const selfEvaluation = prefer(summary, resumeSummary);
+  const fallbackSelfEvaluation = prefer(summary, resumeSummary);
+  const selfEvaluationSource = selfEvaluation ? `AI 基于${resume ? resumeSource : '事实档案'}与 JD 生成` : fallbackSelfEvaluation.source;
 
   const groups: MaterialGroup[] = [
     {
@@ -135,9 +138,9 @@ export async function buildApplicationPack(userId: string, jobId: string) {
     },
     {
       id: 'narratives',
-      title: '自我介绍与岗位动机',
+      title: '自我评价、自我介绍与岗位动机',
       fields: [
-        field('selfEvaluation', '自我评价', selfEvaluation.value, selfEvaluation.source),
+        field('selfEvaluation', '自我评价', selfEvaluation || fallbackSelfEvaluation.value, selfEvaluationSource),
         field(
           'selfIntroduction',
           '个人自我介绍',
@@ -168,6 +171,7 @@ export async function buildApplicationPack(userId: string, jobId: string) {
   );
   const content: ApplicationPackContent = {
     groups,
+    selfEvaluation: selfEvaluation || fallbackSelfEvaluation.value,
     selfIntroduction,
     motivation,
     missingFields,
