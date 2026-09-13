@@ -23,39 +23,7 @@ import {
   type ResumeSuggestionSection,
 } from '@/lib/resume-suggestions';
 import { getRuntimeEnv } from './runtime';
-
-const GENERIC_OFFICE_SKILL_NAMES = new Set([
-  'excel',
-  'microsoft excel',
-  'ppt',
-  'powerpoint',
-  'microsoft powerpoint',
-  'word',
-  'microsoft word',
-  'microsoft office',
-  'office',
-  'outlook',
-  'microsoft outlook',
-]);
-
-function skillNames(value: string) {
-  const body = value.split(/[：:]/, 2)[1] || value;
-  return body
-    .split(/[、,，/|+；;（）()]/)
-    .map((item) => item.trim().toLowerCase().replace(/\s+/g, ' '))
-    .filter(Boolean);
-}
-
-function removeGenericOfficeSkills(originalText: string, proposedText: string) {
-  const separator = proposedText.match(/[：:]/)?.[0];
-  if (!separator) return proposedText;
-  const originalNames = new Set(skillNames(originalText));
-  const [category] = proposedText.split(/[：:]/, 1);
-  const names = skillNames(proposedText).filter((name) => (
-    !GENERIC_OFFICE_SKILL_NAMES.has(name) || originalNames.has(name)
-  ));
-  return names.length ? `${category}${separator}${names.join('、')}` : '';
-}
+import { removeExistingSkillNames, removesExistingSkills, skillNames } from '@/lib/resume-skills';
 
 const jobAnalysisSchema = z.object({
   score: z.number().int().min(0).max(100),
@@ -370,7 +338,8 @@ export async function tuneResumeWithAi({
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
       '技能和其他信息也必须保持整洁：主动删除重复词、解析残片、无意义关键词堆叠和无法构成完整信息的孤立短句，例如“项目统筹统筹物流项目协调”。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
       '完成常规改写规划后，再逐项核对 JD 明确要求的高价值命名技能、软件、平台、编程语言或分析方法。如果某项高价值技能（例如 Tableau）在原始简历和候选人已确认事实中都没有证据，但确认后能显著提高匹配度，必须追加一条“技能确认”建议：operation=append、sectionKey=skills、originalText=""、needsUserInput=true。proposedText 使用“类别：技能名”格式，只写待确认的真实技能名称，不得自行添加“精通、熟练”等程度；rationale 必须直接询问“岗位要求 X，但现有资料未体现，你是否确实会使用？”。最多询问 3 项，不要把同义技能重复提问。',
-      'Excel、PPT/PowerPoint、Word、Outlook、Microsoft Office 等通用办公软件不得作为新增技能或技能确认建议；只有原始简历或候选人事实中已经明确写出时才可保留，不能因为 JD 提到或岗位通常需要就加入。',
+      'Excel、PPT/PowerPoint、Microsoft Office 与其他技能采用同样的事实规则：原版已有或用户确认的必须保留；不能仅凭 JD 自动加入，也不能仅因属于办公软件就删去。',
+      '原始简历 skills 中已有的软件、工具、编程语言、语言能力和专业方法都必须保留，不得因 JD 未提到而删除或在改写中遗漏任何一项，包括招标书、项目管理、ERD 等。可以调整分类、排序和去除完全重复项；只有明确的解析乱码才可删除。',
       '技能确认建议必须排在全部常规改写、合并、删除和新增建议之后。若原始简历或事实库已明确包含该技能，不得再次询问；若用户不确认，该技能不会进入简历。“技能确认”只允许作为界面状态，绝不能写进 proposedText 的类别或正文；应使用“工具技能”“研究与方法”“专业技能”等真实简历分类。',
       '优先使用 merge 完成“多条碎片合成一条”，不要用多条 replace 制造更多要点。不得因为 JD 没提某项就机械删除；只有删除或合并后能明显提升岗位针对性、内容深度或信息密度时才建议。',
       '除 merge 外，mergedOriginalTexts 必须为空数组。任何一个原始要点最多只能被一个 replace、merge 或 delete 建议使用，避免建议之间互相覆盖。',
@@ -408,12 +377,12 @@ export async function tuneResumeWithAi({
       suggestion.proposedText,
       content.language,
     );
-    if ((operation === 'append' || operation === 'replace') && section === 'skills') {
-      suggestion.proposedText = removeGenericOfficeSkills(
-        operation === 'append' ? '' : suggestion.originalText,
-        suggestion.proposedText,
-      );
+    if (operation === 'append' && section === 'skills') {
+      suggestion.proposedText = removeExistingSkillNames(suggestion.proposedText, content.skills);
     }
+    if (section === 'skills' && (operation === 'delete' || operation === 'replace')
+      && !isLikelySupplementalNoise(suggestion.originalText, content.language)
+      && removesExistingSkills(suggestion.originalText, operation === 'delete' ? '' : suggestion.proposedText)) return false;
     if (operation !== 'delete' && !suggestion.proposedText) return false;
     if (operation !== 'delete' && (section === 'skills' || section === 'extras')) {
       if (!/^[^：:\n]{2,20}[：:]\s*\S+/.test(suggestion.proposedText)
@@ -450,9 +419,7 @@ export async function tuneResumeWithAi({
       if (section === 'skills') {
         const [category = '', body = ''] = suggestion.proposedText.split(/[：:]/, 2);
         const positioning = /行业关注|求职方向|学习关注|industry interest|career focus/i.test(category);
-        const namedSkills = body.split(/[、,，/|+；;（）()]/)
-          .map((item) => item.trim().toLowerCase().replace(/\s+/g, ''))
-          .filter((item) => item.length >= 2);
+        const namedSkills = skillNames(suggestion.proposedText);
         if (!positioning && namedSkills.some((skill) => !knownSkillEvidence.includes(skill))) {
           suggestion.needsUserInput = true;
           suggestion.rationale = `岗位需要 ${body.trim()}，但原始简历和事实库尚未体现。你是否确实会使用？`;

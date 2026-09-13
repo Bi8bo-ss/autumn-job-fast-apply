@@ -34,8 +34,9 @@ import {
   type TuneSuggestion,
 } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
-import { normalizeResumeContent, resumeContentToText } from '@/lib/resume-parser';
-import { applyResumeSuggestion, decodeMergeSourceTexts, normalizeSuggestedResumeText, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
+import { buildResumePreviewContent } from '@/lib/resume-preview';
+import { skillNames } from '@/lib/resume-skills';
+import { decodeMergeSourceTexts, normalizeSuggestedResumeText, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
 
 type WorkspaceVersion = {
   id: string;
@@ -127,12 +128,12 @@ export function JobWorkspace({
   const activeNumber = activeSuggestion ? suggestions.findIndex((item) => item.id === activeSuggestion.id) + 1 : suggestions.length;
   const previewVersion = runBase || base.find((item) => item.id === selected) || base[0];
   const previewContent = useMemo<ResumeContent | null>(
-    () => buildPreviewContent(previewVersion, suggestions, activeSuggestion, drafts),
+    () => buildResumePreviewContent(previewVersion, suggestions, activeSuggestion, drafts),
     [previewVersion, suggestions, activeSuggestion, drafts],
   );
   const previewHighlight = useMemo(
-    () => getActivePreviewHighlight(activeSuggestion, drafts, previewContent?.language),
-    [activeSuggestion, drafts, previewContent?.language],
+    () => getActivePreviewHighlight(activeSuggestion, drafts, previewContent),
+    [activeSuggestion, drafts, previewContent],
   );
   const existingOutput = data.run?.status === 'finalized' ? branches[0] : null;
   const outputVersion = generatedVersion || existingOutput;
@@ -414,44 +415,26 @@ function ActionSetup({
   );
 }
 
-function buildPreviewContent(
-  version: WorkspaceVersion | undefined,
-  suggestions: WorkspaceSuggestion[],
-  active: WorkspaceSuggestion | undefined,
-  drafts: Record<string, string>,
-): ResumeContent | null {
-  if (!version?.contentJson) return null;
-  try {
-    const raw = JSON.parse(version.contentJson) as ResumeContent;
-    let content = normalizeResumeContent(raw, resumeContentToText(raw));
-    for (const item of suggestions) {
-      if (item.state === 'accepted') content = applyResumeSuggestion(content, item.sectionKey, item.originalText, item.editedText || item.proposedText);
-    }
-    if (active) {
-      const draft = drafts[active.id] ?? active.editedText ?? active.proposedText;
-      content = applyResumeSuggestion(content, active.sectionKey, active.originalText, draft);
-    }
-    return content;
-  } catch {
-    return null;
-  }
-}
-
 function getActivePreviewHighlight(
   active: WorkspaceSuggestion | undefined,
   drafts: Record<string, string>,
-  language: ResumeContent['language'] | undefined,
+  content: ResumeContent | null,
 ) {
-  if (!active || !language) return '';
+  if (!active || !content) return '';
   const target = parseSuggestionSection(active.sectionKey);
   const draft = drafts[active.id] ?? active.editedText ?? active.proposedText;
   if (!draft.trim()) return '';
-  return normalizeSuggestedResumeText(
+  const text = normalizeSuggestedResumeText(
     target.section,
     target.operation === 'merge' ? '' : active.originalText,
     draft,
-    language,
+    content.language,
   );
+  if (target.section === 'skills') {
+    const names = new Set(skillNames(text));
+    return content.skills.find((line) => skillNames(line).some((name) => names.has(name))) || '';
+  }
+  return text;
 }
 
 function MobileResumePreview({ content, resumeName, active, highlightText }: { content: ResumeContent | null; resumeName: string; active: boolean; highlightText: string }) {
@@ -473,12 +456,46 @@ function MobileResumePreview({ content, resumeName, active, highlightText }: { c
 }
 
 function ResumePreview({ content, resumeName, active, highlightText, embedded = false }: { content: ResumeContent | null; resumeName: string; active: boolean; highlightText: string; embedded?: boolean }) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const resumeRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const page = pageRef.current;
+    const resume = resumeRef.current;
+    if (!page || !resume) return;
+
+    const fit = () => {
+      if (!page.clientWidth) return;
+      page.style.height = `${page.clientWidth * 297 / 210}px`;
+      const available = page.clientHeight * 0.985;
+      const apply = (scale: number) => {
+        resume.style.width = `${100 / scale}%`;
+        resume.style.transform = `scale(${scale})`;
+        return resume.scrollHeight * scale;
+      };
+      let low = 0.25;
+      let high = 1;
+      if (apply(1) <= available) return;
+      for (let index = 0; index < 16; index += 1) {
+        const middle = (low + high) / 2;
+        if (apply(middle) <= available) low = middle;
+        else high = middle;
+      }
+      apply(low);
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(page);
+    return () => observer.disconnect();
+  }, [content]);
+
   return (
     <section className={cn('overflow-hidden rounded-xl border bg-[#dfe3e8]', embedded && 'border-0')}>
       <div className="flex items-center justify-between border-b bg-white px-4 py-3">
         <div>
-          <p className="text-sm font-semibold">原始基础简历：{resumeName}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">本次从原版生成 · A4 单页自适应</p>
+          <p className="text-sm font-semibold">岗位版简历预览：{resumeName}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{active ? '含当前编辑草稿 · 确认后保存' : '已接受的修改'} · A4 单页自适应</p>
         </div>
         <span className={cn('inline-flex items-center gap-2 text-xs font-medium', active ? 'text-emerald-700' : 'text-muted-foreground')}>
           <span className={cn('status-dot', active ? 'bg-emerald-500' : 'bg-slate-400')} />
@@ -487,7 +504,8 @@ function ResumePreview({ content, resumeName, active, highlightText, embedded = 
       </div>
       <div className={cn('overflow-y-auto p-3 sm:p-5', embedded ? 'max-h-none' : 'max-h-[calc(100vh-185px)]')}>
         {content ? (
-          <article className="mx-auto aspect-[210/297] w-full max-w-[760px] overflow-hidden bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black shadow-[0_10px_26px_-14px_rgb(15_23_42_/_40%)]">
+          <div ref={pageRef} className="mx-auto aspect-[210/297] w-full max-w-[760px] overflow-hidden bg-white shadow-[0_10px_26px_-14px_rgb(15_23_42_/_40%)]">
+            <article ref={resumeRef} className="flow-root w-full origin-top-left bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black">
             <Image src="/resume-portrait.jpg" alt="" width={195} height={294} className="float-right mb-2 ml-[5%] aspect-[195/294] w-[11.2%] object-cover" />
             <h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>
             {content.summary ? <p className={cn('mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]', isHighlighted(content.summary, highlightText) && 'rounded-r border-l-2 border-emerald-500 bg-emerald-100/80 px-1')} title={isHighlighted(content.summary, highlightText) ? '当前修改位置' : undefined}>{content.summary}</p> : null}
@@ -496,7 +514,8 @@ function ResumePreview({ content, resumeName, active, highlightText, embedded = 
             <PreviewEntries title={content.language === 'zh' ? '项目经历' : 'PROJECTS'} entries={content.projects} language={content.language} highlightText={highlightText} />
             <PreviewSection title={content.language === 'zh' ? '技能' : 'SKILLS'} lines={content.skills} highlightText={highlightText} />
             <PreviewSection title={content.language === 'zh' ? '其他信息' : 'ADDITIONAL'} lines={content.extras} highlightText={highlightText} />
-          </article>
+            </article>
+          </div>
         ) : (
           <div className="grid min-h-72 place-items-center rounded-lg border border-dashed border-slate-300 bg-white/60 px-6 text-center text-sm text-muted-foreground">选择基础简历后显示预览</div>
         )}

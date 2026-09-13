@@ -1,6 +1,8 @@
 import type { ResumeContent } from '@/lib/product-types';
 import { isLikelySupplementalNoise, normalizeResumeSkillLine } from '@/lib/resume-parser';
 
+import { mergeResumeSkillLines, removesExistingSkills } from './resume-skills';
+
 export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete' | 'merge';
 export type ResumeSuggestionSection = 'summary' | 'experience' | 'project' | 'skills' | 'extras';
 
@@ -60,8 +62,10 @@ export function applyResumeSuggestion(
     if (!nextText) return content;
     if (target.section === 'skills' || target.section === 'extras') {
       if (isLikelySupplementalNoise(nextText, source.language)) return content;
-      const lines = target.section === 'skills' ? content.skills : content.extras;
-      if (!lines.some((line) => line.trim() === nextText)) lines.push(nextText);
+      if (target.section === 'skills') {
+        // Apply exactly the user's confirmed tools, including Office skills.
+        content.skills = mergeResumeSkillLines([...content.skills, nextText], source.language);
+      } else if (!content.extras.includes(nextText)) content.extras.push(nextText);
       return content;
     }
     if (target.section !== 'experience' && target.section !== 'project') return content;
@@ -76,6 +80,8 @@ export function applyResumeSuggestion(
 
   if (target.operation === 'delete') {
     if (!originalText) return content;
+    if (target.section === 'skills' && !isLikelySupplementalNoise(originalText, source.language)
+      && removesExistingSkills(originalText, nextText)) return content;
     return nextText
       ? replaceSectionText(content, target.section, originalText, nextText)
       : deleteSectionText(content, target.section, originalText);
@@ -88,6 +94,8 @@ export function applyResumeSuggestion(
   }
 
   if (!originalText || !nextText) return content;
+  if (target.section === 'skills' && !isLikelySupplementalNoise(originalText, source.language)
+    && removesExistingSkills(originalText, nextText)) return content;
   if ((target.section === 'skills' || target.section === 'extras')
     && isLikelySupplementalNoise(nextText, source.language)) return content;
   return replaceSectionText(content, target.section, originalText, nextText);
@@ -103,7 +111,7 @@ export function normalizeSuggestedResumeText(
 
   if (!compact) return compact;
   if (section === 'skills') {
-    return normalizeResumeSkillLine(compact, language || inferLanguage(compact));
+    return normalizeResumeSkillLine(cleanText(proposedText.replace(/\r?\n+/g, '、')), language || inferLanguage(compact));
   }
   if (section !== 'experience' && section !== 'project') {
     return compact;

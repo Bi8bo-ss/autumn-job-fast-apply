@@ -1,5 +1,6 @@
 /* oxlint-disable eslint/no-control-regex -- Resume normalization intentionally strips control characters. */
 import type { ResumeContent } from './product-types';
+import { mergeResumeSkillLines } from './resume-skills';
 
 type Language = ResumeContent['language'];
 type Section = 'preamble' | 'summary' | 'education' | 'experiences' | 'projects' | 'skills' | 'extras';
@@ -53,7 +54,11 @@ export function isLikelySupplementalNoise(value: string, language: Language) {
   if (language === 'zh') {
     for (let size = 2; size <= Math.min(6, Math.floor(compact.length / 2)); size += 1) {
       for (let index = 0; index + size * 2 <= compact.length; index += 1) {
-        if (compact.slice(index, index + size) === compact.slice(index + size, index + size * 2)) return true;
+        const word = compact.slice(index, index + size);
+        // This heuristic is for repeated Chinese extraction fragments only.
+        // MySQL, SQL, contains "sql,sql," but is two distinct, valid skills.
+        if (/^[\u3400-\u9fff]+$/.test(word)
+          && word === compact.slice(index + size, index + size * 2)) return true;
       }
     }
     if (!/[：:，,、；;（）()/]/.test(line) && line.length >= 8 && line.length <= 40) {
@@ -156,6 +161,20 @@ function splitList(lines: string[]) {
   });
 }
 
+function joinSkillSourceLines(lines: string[]) {
+  const joined: string[] = [];
+  for (const raw of lines) {
+    const line = cleanLine(raw);
+    const previous = joined.at(-1);
+    // PDF wraps may split “User Behavior Analysis” across physical lines.
+    // Continue the labeled row until the next category, retaining its words.
+    if (previous && /^[^：:]{1,32}[：:]/.test(previous) && !/^[^：:]{1,32}[：:]/.test(line)) {
+      joined[joined.length - 1] = `${previous} ${line}`;
+    } else if (line) joined.push(line);
+  }
+  return joined;
+}
+
 function parseEntries(lines: string[]): ResumeContent['experiences'] {
   const entries: ResumeContent['experiences'] = [];
   let current: ResumeContent['experiences'][number] | null = null;
@@ -245,7 +264,7 @@ export function parseResumeText(text: string, language: Language): ResumeContent
     education: splitList(buckets.education),
     experiences: parseEntries(buckets.experiences),
     projects: parseEntries(buckets.projects),
-    skills: cleanSupplementalLines(splitList(buckets.skills), language, 'skills'),
+    skills: cleanSupplementalLines(joinSkillSourceLines(buckets.skills), language, 'skills'),
     extras: cleanSupplementalLines([...overflow, ...splitList(buckets.extras)], language, 'extras'),
   };
 }
@@ -275,7 +294,8 @@ export function normalizeResumeContent(content: ResumeContent, sourceText?: stri
     ...content.projects.flatMap((entry) => [entry.heading, entry.meta])]
     .some((line) => line.length > 240);
   const degenerate = content.headline.length > 80 || hasOversizedLine || structuredCount === 0;
-  const parsed = degenerate ? parseResumeText(sourceText?.trim() || resumeContentToText(content), content.language) : content;
+  const sourceParsed = sourceText?.trim() ? parseResumeText(sourceText.trim(), content.language) : null;
+  const parsed = degenerate ? sourceParsed || parseResumeText(resumeContentToText(content), content.language) : content;
   return {
     ...parsed,
     headline: cleanLine(parsed.headline),
@@ -283,7 +303,12 @@ export function normalizeResumeContent(content: ResumeContent, sourceText?: stri
     education: parsed.education.map(cleanLine).filter(Boolean),
     experiences: parsed.experiences.map(normalizeEntry),
     projects: parsed.projects.map(normalizeEntry),
-    skills: cleanSupplementalLines(parsed.skills, parsed.language, 'skills'),
+    // Keep every skill recovered from the original source. A tailored version may
+    // rewrite a skill line, but a job-specific edit must not erase useful tools.
+    skills: mergeResumeSkillLines(
+      cleanSupplementalLines([...(sourceParsed?.skills || []), ...parsed.skills], parsed.language, 'skills'),
+      parsed.language,
+    ),
     extras: cleanSupplementalLines(parsed.extras, parsed.language, 'extras'),
   };
 }
