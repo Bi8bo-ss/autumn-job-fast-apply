@@ -335,8 +335,8 @@ export async function tuneResumeWithAi({
       'operation=append 可用于 experience、project、skills 或 extras。用于 skills/extras 时 originalText 必须为空字符串；用于 experience/project 时，originalText 必须逐字引用目标经历或项目中的一条现有要点，作为定位锚点，新要点会添加到同一段经历或项目末尾。',
       '新增经历或项目要点只能整合该段经历本身及候选人事实库中明确支持的事实，绝不能把另一段经历的职责或成果挪过来，也不能仅凭 JD 新造行业经验。证据不足时不要新增；确实值得询问用户时才设置 needsUserInput=true。',
       'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把同一任务链的事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，不得把无关主题硬塞进同一点，也不得跨公司或跨项目合并。',
-      'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点、技能或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题和项目标题不能删除。',
-      '技能和其他信息也必须保持整洁：主动删除重复词、解析残片、无意义关键词堆叠和无法构成完整信息的孤立短句，例如“项目统筹统筹物流项目协调”。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
+      'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题、项目标题和原始技能不能删除。',
+      '其他信息 extras 可清理解析残片和无意义关键词堆叠。原始技能 skills 属于已确认事实，不能因为重复词、疑似解析残片或与 JD 低相关就删除技能或整行分类；无法确定的文字应向用户说明。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
       '完成常规改写规划后，再逐项核对 JD 明确要求的高价值命名技能、软件、平台、编程语言或分析方法。如果某项高价值技能（例如 Tableau）在原始简历和候选人已确认事实中都没有证据，但确认后能显著提高匹配度，必须追加一条“技能确认”建议：operation=append、sectionKey=skills、originalText=""、needsUserInput=true。proposedText 使用“类别：技能名”格式，只写待确认的真实技能名称，不得自行添加“精通、熟练”等程度；rationale 必须直接询问“岗位要求 X，但现有资料未体现，你是否确实会使用？”。最多询问 3 项，不要把同义技能重复提问。',
       'Excel、PPT/PowerPoint、Microsoft Office 与其他技能采用同样的事实规则：原版已有或用户确认的必须保留；不能仅凭 JD 自动加入，也不能仅因属于办公软件就删去。',
       '原始简历 skills 中已有的软件、工具、编程语言、语言能力和专业方法都必须保留，不得因 JD 未提到而删除或在改写中遗漏任何一项，包括招标书、项目管理、ERD 等。可以调整分类、排序和去除完全重复项；只有明确的解析乱码才可删除。',
@@ -381,7 +381,6 @@ export async function tuneResumeWithAi({
       suggestion.proposedText = removeExistingSkillNames(suggestion.proposedText, content.skills);
     }
     if (section === 'skills' && (operation === 'delete' || operation === 'replace')
-      && !isLikelySupplementalNoise(suggestion.originalText, content.language)
       && removesExistingSkills(suggestion.originalText, operation === 'delete' ? '' : suggestion.proposedText)) return false;
     if (operation !== 'delete' && !suggestion.proposedText) return false;
     if (operation !== 'delete' && (section === 'skills' || section === 'extras')) {

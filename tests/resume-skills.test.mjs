@@ -39,6 +39,73 @@ await test('import preserves all 11 software, 10 professional, and 2 language it
   allOriginalSkillsPresent(original());
 });
 
+await test('entering tuning before any suggestion restores a missing professional row', () => {
+  const damaged = original();
+  damaged.skills = damaged.skills.filter((line) => !line.startsWith('专业'));
+  const preview = buildResumePreviewContent({ contentJson: JSON.stringify(damaged), sourceText: source }, [], undefined, {});
+  allOriginalSkillsPresent(preview);
+  assert.equal(preview.skills.length, 3);
+});
+
+await test('PDF spaces inside project management cannot turn a professional skill into a section heading', () => {
+  for (const spacing of [' ', '  ', '\t']) {
+    const extracted = source.replace('项目管理', ` 项目${spacing}管理`);
+    const parsed = parseResumeText(extracted, 'zh');
+    allOriginalSkillsPresent(parsed);
+    assert.equal(parsed.projects.length, 0);
+    const damaged = { ...parsed, skills: parsed.skills.filter((line) => !line.startsWith('专业')) };
+    allOriginalSkillsPresent(buildResumePreviewContent({ contentJson: JSON.stringify(damaged), sourceText: extracted }, [], undefined, {}));
+  }
+});
+
+await test('skill category headings with inline bodies do not lose their category', () => {
+  const input = source.replace('专业：', '专业技能：');
+  const content = normalizeResumeContent(parseResumeText(input, 'zh'), input);
+  allOriginalSkillsPresent(content);
+  assert.ok(content.skills.some((line) => line.startsWith('专业技能：')));
+  assert.equal(content.skills.length, 3);
+});
+
+await test('sections after skills remain separate in multiline and legacy flat source text', () => {
+  for (const boundary of ['\n', '  ']) {
+    const input = `${source}${boundary}其他信息${boundary}证书示例`;
+    const content = normalizeResumeContent(parseResumeText(input, 'zh'), input);
+    allOriginalSkillsPresent(content);
+    assert.ok(!content.skills.join('\n').includes('证书示例'));
+    assert.ok(content.extras.includes('证书示例'));
+  }
+});
+
+await test('a labeled software bullet in an experience is not moved into the skills section', () => {
+  const input = `示例姓名\n工作经历\n示例公司\n2025.01 - 2025.06\n• 软件：使用 Python 自动化数据清洗，提高数据交付效率。\n技能\n${originalLines.join('\n')}`;
+  const content = parseResumeText(input, 'zh');
+  allOriginalSkillsPresent(content);
+  assert.ok(content.experiences.some((entry) => entry.bullets.some((line) => line.includes('自动化数据清洗'))));
+  assert.ok(!content.skills.join('\n').includes('自动化数据清洗'));
+});
+
+await test('flat legacy PDF text preserves all categories including a spaced category label', () => {
+  const flat = `示例姓名  技能  ${originalLines.join('  ')}`.replace('专业：', '专 业 ：').replace('项目管理', ' 项目 管理');
+  const parsed = parseResumeText(flat, 'zh');
+  allOriginalSkillsPresent(parsed);
+  assert.equal(parsed.projects.length, 0);
+});
+
+await test('original skill facts are not removed by a generic repeated-text heuristic', () => {
+  const row = `专业：${professional.join('，')}，数据库数据库设计，端到端数据分析。`;
+  const extracted = source.replace(originalLines[2], row);
+  const parsed = parseResumeText(extracted, 'zh');
+  allOriginalSkillsPresent(parsed);
+  assert.ok(parsed.skills.flatMap(skillNames).includes('数据库数据库设计'));
+  assert.ok(parsed.skills.flatMap(skillNames).includes('端到端数据分析'));
+  const normalizedContent = normalizeResumeContent(parsed, extracted);
+  allOriginalSkillsPresent(normalizedContent);
+  assert.deepEqual(applyResumeSuggestion(normalizedContent, 'delete:skills', normalizedContent.skills.find((line) => line.startsWith('专业')), ''), normalizedContent);
+  const uncategorized = { ...parsed, skills: ['项目统筹统筹物流项目协调', '人人交互', ...parsed.skills] };
+  assert.ok(normalizeResumeContent(uncategorized).skills.includes('项目统筹统筹物流项目协调'));
+  assert.ok(normalizeResumeContent(uncategorized).skills.includes('人人交互'));
+});
+
 await test('PDF line wraps inside an English skill name preserve the complete name', () => {
   const wrapped = source.replace('User Behavior Analysis', 'User\nBehavior Analysis');
   allOriginalSkillsPresent(parseResumeText(wrapped, 'zh'));

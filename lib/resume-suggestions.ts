@@ -80,8 +80,7 @@ export function applyResumeSuggestion(
 
   if (target.operation === 'delete') {
     if (!originalText) return content;
-    if (target.section === 'skills' && !isLikelySupplementalNoise(originalText, source.language)
-      && removesExistingSkills(originalText, nextText)) return content;
+    if (target.section === 'skills' && removesExistingSkills(originalText, nextText)) return content;
     return nextText
       ? replaceSectionText(content, target.section, originalText, nextText)
       : deleteSectionText(content, target.section, originalText);
@@ -94,8 +93,7 @@ export function applyResumeSuggestion(
   }
 
   if (!originalText || !nextText) return content;
-  if (target.section === 'skills' && !isLikelySupplementalNoise(originalText, source.language)
-    && removesExistingSkills(originalText, nextText)) return content;
+  if (target.section === 'skills' && removesExistingSkills(originalText, nextText)) return content;
   if ((target.section === 'skills' || target.section === 'extras')
     && isLikelySupplementalNoise(nextText, source.language)) return content;
   return replaceSectionText(content, target.section, originalText, nextText);

@@ -16,6 +16,13 @@ const SECTION_LABELS: Array<{ section: Section; labels: string[] }> = [
 
 const ALL_LABELS = SECTION_LABELS.flatMap((item) => item.labels).sort((a, b) => b.length - a.length);
 const INLINE_SECTION_RE = new RegExp(`(?:^|[\\s|｜])(${ALL_LABELS.map(escapeRegExp).join('|')})(?=[：:\\s|｜]|$)`, 'gi');
+const SKILL_ROW_LABELS = ['语言', '语言能力', '软件', '软件技能', '工具', '工具技能', '数据工具', '技术技能', '专业', '专业技能', '研究与方法', '方法', '应用', 'languages', 'language', 'software', 'tools', 'technical skills', 'professional skills', 'research methods'];
+const SKILL_ROW_PATTERN = SKILL_ROW_LABELS
+  .sort((a, b) => b.length - a.length)
+  .map((label) => /^[\u3400-\u9fff]+$/.test(label) ? label.split('').join('[ \\t]*') : escapeRegExp(label).replace(/ /g, '[ \\t]+'))
+  .join('|');
+const SKILL_ROW_START_RE = new RegExp(`(^|[\\s；;])(${SKILL_ROW_PATTERN})[ \\t]*[：:]`, 'gi');
+const SKILL_ROW_RE = new RegExp(`^(?:${SKILL_ROW_PATTERN})[ \\t]*[：:]`, 'i');
 const DATE_RE = /(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?/;
 const DATE_RANGE_RE = /(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?\s*(?:--?|–|—|至|~)\s*(?:(?:19|20)\d{2}(?:[.\-/年]\d{1,2})?|至今|present|now)/i;
 const CONTACT_RE = /(?:@|(?:\+?86[-\s]?)?1\d{10}|电话|手机|邮箱|email|tel\.?|linkedin|github|地址)/i;
@@ -98,7 +105,11 @@ function cleanSupplementalLines(lines: string[], language: Language, kind: 'skil
   return lines
     .map(cleanBodyLine)
     .map((line) => kind === 'skills' ? normalizeResumeSkillLine(line, language) : line)
-    .filter((line) => !isLikelySupplementalNoise(line, language))
+    // Original skills are confirmed source facts, not AI suggestions. A repeated
+    // extraction fragment or an unresolved glyph must not erase the entire row.
+    .filter((line) => kind === 'skills'
+      ? Boolean(line) && !/^[^：:]{1,32}[：:]\s*$/.test(line)
+      : !isLikelySupplementalNoise(line, language))
     .filter((line) => {
       const key = line.replace(/\s+/g, '').toLowerCase();
       if (seen.has(key)) return false;
@@ -112,7 +123,24 @@ function prepareLines(text: string) {
     .replace(/\u0000/g, '')
     .replace(/\f/g, '\n')
     .replace(/\r/g, '\n')
-    .replace(INLINE_SECTION_RE, (_match, label: string) => `\n${label}\n`)
+    // Legacy PDF text can put every category on one physical line. Restore
+    // category boundaries before looking for headings inside the source text.
+    .replace(SKILL_ROW_START_RE, (match: string, boundary: string, label: string, offset: number, input: string) => {
+      // A “软件：…” experience bullet is not a standalone skills category.
+      if (/(?:^|[\r\n]|[ \t]{2,})[•●▪◦·*✓✔➢►▶◆◇■□\-–—]+[ \t]*$/.test(input.slice(0, offset))) return match;
+      return `${/[；;]/.test(boundary) ? boundary : ''}\n${cleanBodyLine(label)}：`;
+    })
+    .replace(INLINE_SECTION_RE, (match: string, label: string, offset: number, input: string) => {
+      const prefix = input.slice(input.lastIndexOf('\n', offset - 1) + 1, offset);
+      const after = input.slice(offset + match.length);
+      const labeledRow = SKILL_ROW_RE.test(`${label}${after}`) && /^[：:][ \t]*[^\s]/.test(after);
+      const separateHeading = /(?:[\n\r|｜]|[ \t]{2,})$/.test(`${prefix}${match.slice(0, -label.length)}`)
+        && (label.length > 2 || /^[：:]?(?:[ \t]*\n|[ \t]*$)/.test(after));
+      // “项目 管理” inside a professional row is a skill, not “项目” followed
+      // by a new project section. Also retain labeled “专业技能：…” rows.
+      if (labeledRow || (SKILL_ROW_RE.test(prefix) && !separateHeading)) return match;
+      return `\n${label}\n`;
+    })
     .replace(/\s*[•●▪◦✓✔➢►▶◆◇■□]\s*/g, '\n• ')
     // PDF text extraction often converts list bullets into spaced hyphens.
     // Date ranges and words such as “平台-服务商” have no surrounding spaces,
@@ -239,6 +267,13 @@ export function parseResumeText(text: string, language: Language): ResumeContent
   };
   let section: Section = 'preamble';
   for (const line of prepareLines(text)) {
+    if (SKILL_ROW_RE.test(line) && !/^[^：:]+[：:]\s*$/.test(line)
+      && (section === 'skills' || (section === 'preamble'
+        && /^(?:语言|软件|专业|language|software|professional skills)/i.test(line)))) {
+      section = 'skills';
+      buckets.skills.push(line);
+      continue;
+    }
     const detected = sectionFor(line);
     if (detected) {
       section = detected;
