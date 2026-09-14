@@ -13,15 +13,15 @@ export function buildExtensionCatalog(profile: Profile, resume?: ResumeContent |
     if (value.trim()) facts.push({ key, label, aliases, value: value.trim(), section, index, source });
   };
   add('identity.name', '姓名', ['姓名', '您的姓名', '全名', 'full name', 'candidate name', 'name'], profile.identity.name);
-  add('identity.email', '邮箱', ['邮箱', '电子邮件', 'email', 'e-mail', 'email address'], profile.identity.email);
-  add('identity.phone', '手机', ['手机', '手机号', '联系电话', 'mobile', 'phone', 'telephone', 'phone number'], profile.identity.phone);
+  add('identity.email', '邮箱', ['邮箱', '电子邮箱', '电子邮件', 'email', 'e-mail', 'email address'], profile.identity.email);
+  add('identity.phone', '手机', ['手机', '手机号', '手机号码', '联系电话', 'mobile', 'phone', 'telephone', 'phone number'], profile.identity.phone);
   add('identity.location', '现居地', ['现居地', '居住城市', 'current location', 'current city', 'address'], profile.identity.location);
   add('identity.gender', '性别', ['性别', 'gender'], profile.identity.gender);
   add('identity.birthDate', '出生日期', ['出生日期', '生日', 'date of birth', 'birth date', 'dob'], profile.identity.birthDate);
   add('identity.idNumber', '证件号码', ['身份证号', '身份证号码', 'id number'], profile.identity.idNumber);
   profile.education.forEach((entry, index) => {
     const put = (key: string, label: string, aliases: string[], value: string) => add(`education.${index}.${key}`, `教育 ${index + 1} · ${label}`, aliases, value, 'education', index);
-    put('school', '学校', ['学校', '毕业院校', '院校', 'school', 'university', 'institution', 'college'], entry.school);
+    put('school', '学校', ['学校', '学校名称', '毕业院校', '院校', 'school', 'university', 'institution', 'college'], entry.school);
     put('degree', '学历', ['学历', '学位', 'degree', 'qualification'], entry.degree);
     put('major', '专业', ['专业', '专业名称', 'major', 'field of study'], entry.major);
     put('startDate', '入学日期', ['入学日期', '入学时间', '开始日期', 'start date', 'from'], entry.startDate);

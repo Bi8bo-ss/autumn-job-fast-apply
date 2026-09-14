@@ -5,6 +5,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { matchField, formatValue } from '../chrome-extension/field-model.js';
+import { build } from 'vite';
+const compiled = await build({ configFile: false, logLevel: 'silent', define: { 'process.env.NODE_ENV': '"production"' }, build: { write: false, minify: false, lib: { entry: resolve('tests/extension-react-fixture.jsx'), formats: ['iife'], name: 'ApplicationFixture' } } });
+const compiledResult = Array.isArray(compiled) ? compiled[0] : compiled;
+const reactScript = compiledResult.output.find(item => item.type === 'chunk').code;
 const require = createRequire(import.meta.url);
 let playwright;
 try { playwright = require(process.env.PLAYWRIGHT_MODULE || 'playwright'); }
@@ -33,6 +37,8 @@ const facts = [
   {key:'experiences.0.description',aliases:['description'],value:'Verified achievement',section:'experiences',index:0},
 ].map(fact=>({...fact,label:fact.key}));
 const server = createServer((request,response)=>{
+  if (request.url === '/react.js') { response.setHeader('content-type','application/javascript'); response.end(reactScript); return; }
+  if (request.url === '/react') { response.setHeader('content-type','text/html; charset=utf-8'); response.end('<title>Application Fixture</title><style>.form-row{display:flex;margin:20px}.field-label{width:140px}.ant-select input{width:1px;opacity:0}.ant-select-selector{border:1px solid #ccc;padding:5px;min-width:200px}[role=option]{padding:10px}</style><div id="root"></div><script src="/react.js"></script>'); return; }
   if(request.url?.startsWith('/api/extension/bundle')) { response.setHeader('content-type','application/json'); response.end(JSON.stringify({facts,jobs:[],updatedAt:new Date().toISOString()})); return; }
   if(request.url==='/api/jobs') { let body=''; request.on('data',chunk=>body+=chunk); request.on('end',()=>{ const job=JSON.parse(body); assert.equal(job.company,'Fixture Company'); response.setHeader('content-type','application/json'); response.end(JSON.stringify({job:{id:'job_fixture'}})); }); return; }
   response.setHeader('content-type','text/html'); response.end(fixtures[request.url] || fixtures['/']);
@@ -97,6 +103,22 @@ try {
   const rejected = await panel.evaluate(data=>chrome.runtime.sendMessage({type:'fill',...data}),{...fresh.value,fields:[{...stale,value:'Do not write'}],overwrite:true});
   assert.ok(rejected.value[0].status.includes('变化')); assert.equal(await page.locator('input[name="full-name"]').inputValue(),'Test Candidate');
   console.log('PASS stale descriptor protection');
+  await page.goto('http://localhost:3000/react');
+  await page.waitForSelector('#framework-state');
+  const complex = await panel.evaluate(()=>chrome.runtime.sendMessage({type:'scan'}));
+  assert.ok(complex.ok, complex.error);
+  assert.equal(complex.value.fields.find(field=>field.name==='email')?.label.replace(/[\s*：:]/g,''),'电子邮箱');
+  assert.ok(!complex.value.fields.some(field=>field.name==='priPhotoUrl'));
+  const extraFacts = [{key:'identity.gender',label:'性别',aliases:['性别'],value:'Female',section:'identity',index:0}, {...facts.find(fact=>fact.key==='education.0.degree'),value:'Master'}];
+  const complexFacts = [...facts.filter(fact=>fact.key!=='education.0.degree'),...extraFacts];
+  const complexFields = complex.value.fields.flatMap(field=>{const fact=matchField(field,complexFacts).fact;return fact?[{...field,value:fact.value,factKey:fact.key}]:[];});
+  const complexFilled = await panel.evaluate(data=>chrome.runtime.sendMessage({type:'fill',...data}),{...complex.value,fields:complexFields,overwrite:false});
+  assert.ok(complexFilled.ok,complexFilled.error);
+  await page.locator('#rerender').click();
+  const state = JSON.parse(await page.locator('#framework-state').textContent());
+  assert.equal(state.name,'Test Candidate'); assert.equal(state.email,'test@fixture.invalid'); assert.equal(state.school1,'Test School 1'); assert.equal(state.degree,'硕士'); assert.equal(state.gender,'女');
+  assert.equal(await page.locator('input[name="consent"]').isChecked(),false); assert.equal(await page.evaluate(()=>Boolean(window.submitted)),false);
+  console.log('PASS JD-style sibling labels, hidden backend fields, readonly dropdown, radio and actual React state survives rerender');
   const content = await readFile(resolve('chrome-extension/content-script.js'),'utf8'); assert.ok(!content.includes('.submit('));
 } finally {
   if(browser) await browser.close();

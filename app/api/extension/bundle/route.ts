@@ -2,6 +2,7 @@ import { buildExtensionCatalog } from '@/lib/extension-catalog';
 import { applicationPackFromJson } from '@/lib/server/extension-data';
 import { resumeContentSchema } from '@/lib/product-types';
 import { normalizeResumeContent } from '@/lib/resume-parser';
+import { fillMissingResumeContacts } from '@/lib/resume-form-facts';
 import { requireApiUser } from '@/lib/server/auth';
 import { db, getJob, getProfile, getResumeVersion, listJobs } from '@/lib/server/data';
 import { errorResponse, json } from '@/lib/server/http';
@@ -24,11 +25,14 @@ export async function GET(request: Request) {
     const version = versionRow ? await getResumeVersion(user.userId, versionRow.id) : null;
     const parsed = version ? resumeContentSchema.safeParse(JSON.parse(version.contentJson)) : null;
     const resume = parsed?.success ? normalizeResumeContent(parsed.data, version?.sourceText || '') : null;
-    const facts = buildExtensionCatalog(profile, resume, applicationPackFromJson(packRow?.contentJson), Boolean(jobId && version?.jobId === jobId));
+    const contactFallback = fillMissingResumeContacts(profile, resume, version?.sourceText || '');
+    const facts = buildExtensionCatalog(contactFallback.profile, resume, applicationPackFromJson(packRow?.contentJson), Boolean(jobId && version?.jobId === jobId));
+    for (const fact of facts) if (contactFallback.sources[fact.key]) fact.source = contactFallback.sources[fact.key];
     if (packRow) {
       const answers = await db().prepare('SELECT id,question,answer FROM custom_answers WHERE user_id=? AND pack_id=? ORDER BY updated_at DESC LIMIT 100').bind(user.userId, packRow.id).all<{ id: string; question: string; answer: string }>();
       for (const answer of answers.results) if (answer.answer.trim()) facts.push({ key: `answer.${answer.id}`, label: answer.question, aliases: [answer.question], value: answer.answer, section: 'custom', index: 0, source: '已保存岗位问答' });
     }
-    return json({ facts, resumeName: version?.resumeName || '', jobs: jobs.map(({ id, company, role }) => ({ id, company, role })), selectedJob: job ? { id: job.id, company: job.company, role: job.role } : null, updatedAt: new Date().toISOString() }, { headers: { 'Cache-Control': 'no-store' } });
+    const missingSections = [!facts.some(fact => fact.key === 'identity.name') && '姓名', !profile.education.length && '结构化教育经历', !profile.experiences.length && '结构化工作经历'].filter(Boolean);
+    return json({ facts, missingSections, resumeName: version?.resumeName || '', jobs: jobs.map(({ id, company, role }) => ({ id, company, role })), selectedJob: job ? { id: job.id, company: job.company, role: job.role } : null, updatedAt: new Date().toISOString() }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return errorResponse(error); }
 }

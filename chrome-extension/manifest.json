@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "秋招速投 · 岗位采集与网申填写",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minimum_chrome_version": "116",
   "description": "采集岗位、同步个人档案，按字段含义填写网申。缺失留空，提交由你完成。",
   "permissions": ["activeTab", "tabs", "scripting", "storage", "sidePanel"],

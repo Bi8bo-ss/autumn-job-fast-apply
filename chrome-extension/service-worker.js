@@ -35,7 +35,7 @@ async function activePage() {
 }
 async function pageCommand(tabId, command, payload = {}, frameId) {
   const target = frameId === undefined ? { tabId, allFrames: true } : { tabId, frameIds: [frameId] };
-  await chrome.scripting.executeScript({ target, files: ['content-script.js'] });
+  await chrome.scripting.executeScript({ target, files: ['form-engine.js', 'content-script.js'] });
   return chrome.scripting.executeScript({ target, func: (operation, data) => globalThis.__autumnApplyController.run(operation, data), args: [command, payload] });
 }
 

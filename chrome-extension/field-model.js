@@ -2,6 +2,9 @@ export const normalize = value => String(value || '').normalize('NFKC').toLowerC
 
 export function inferSection(value) {
   const text = String(value).toLowerCase();
+  if (/基本信息|个人信息|联系方式|personal information|contact details|basic information/.test(text)) return 'identity';
+  if (/自我评价|自我介绍|技能|语言|证书|奖项|summary|skills|certificates/.test(text)) return 'profile';
+  if (/求职偏好|意向|preferences/.test(text)) return 'preferences';
   if (/education|academic|学校|教育|学历|院校|学业/.test(text)) return 'education';
   if (/project|项目/.test(text)) return 'projects';
   if (/experience|employment|work history|工作经历|实习经历|工作经验|任职/.test(text)) return 'experiences';
@@ -14,11 +17,14 @@ export function matchField(field, facts, mapping = {}) {
     const fact = facts.find(item => item.key === mapping[field.fingerprint]);
     return { fact: fact || null, confidence: fact ? 1 : 0, reason: fact ? '网站已记住的对应关系' : '已设为留空 / 资料不存在' };
   }
-  const label = normalize(field.label);
+  const cleanLabel = value => String(value || '').replace(/(?:（|\(|\[)\s*(?:必填|选填|可选|required|optional)\s*(?:）|\)|\])/gi, '').replace(/^(?:请填写|请输入|please enter)\s*/i, '');
+  const label = normalize(cleanLabel(field.label));
   const name = normalize(field.name);
+  const nameLeaf = normalize(String(field.name || '').split(/[.[\]_-]/).filter(Boolean).at(-1));
+  if (/^(firstname|lastname|givenname|familyname)$/.test(label || name)) return { fact: null, confidence: 0, reason: '完整姓名不能自动推断姓与名，请指定资料' };
   if (/password|密码|验证码|captcha|同意|agreement|consent|subscribe|隐私|招聘公司|应聘公司|申请公司|申请职位|应聘岗位|desiredcompany|区号|国家代码|countrycode|dialcode|phonecode|分机/.test(label + name)) return { fact: null, confidence: 0, reason: '需要本人操作' };
   const explicitSection = /^(学历|学位|学校|院校|毕业院校|专业名称|school|university|college|degree|major)$/.test(label) ? 'education' : /^(项目名称|projectname|projecttitle)$/.test(label) ? 'projects' : '';
-  const section = field.section || inferSection(field.context + ' ' + field.name) || explicitSection;
+  const section = field.section || inferSection(field.context) || inferSection(field.name) || explicitSection;
   const explicitIndex = field.name.match(/(?:education|experiences?|projects?|employment)[._[]([0-9]+)/i);
   const index = explicitIndex ? Number(explicitIndex[1]) : (field.recordIndex || 0);
   const ranked = facts.map(fact => {
@@ -33,8 +39,8 @@ export function matchField(field, facts, mapping = {}) {
       // Only allow compound labels with a small qualifier, not prose containing
       // unrelated words. Short English tokens such as "to" never substring-match.
       else if (term.length >= 4 && term !== 'name' && label.includes(term) && label.length <= term.length + 8) score = Math.max(score, 86);
-      if (name === term) score = Math.max(score, 82);
-      if (normalize(field.placeholder) === term) score = Math.max(score, 84);
+      if (name === term || nameLeaf === term) score = Math.max(score, 82);
+      if (normalize(cleanLabel(field.placeholder)) === term) score = Math.max(score, 84);
     }
     if (repeated && !section && !/学校|院校|school|university|gpa|专业|major|毕业|入学/.test(field.label.toLowerCase())) score = Math.min(score, 65);
     return { fact, score };

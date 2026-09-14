@@ -27,7 +27,7 @@ export default async function BrowserExtensionPage() {
       <section className="workspace-panel p-6 text-sm leading-7 text-muted-foreground">
         <h2 className="font-semibold text-foreground">通用性与当前边界</h2>
         <p className="mt-2">支持中英文字段、普通输入框、文本域、原生下拉、日期、已有的多条教育 / 经历、开放 Shadow DOM，以及获得权限的 iframe。采用语义匹配与网站专属修正，不依赖某家公司固定的页面布局。</p>
-        <p className="mt-2">复杂联动下拉、封闭 Shadow DOM、文件上传、单选 / 复选、验证码和最终提交仍由你处理。插件不会为了填满表单编造资料，也不会自动新增行或翻页。此版本并不承诺所有网站都能一键完成；无法确认的控件会明确提示。</p>
+        <p className="mt-2">支持外置标签、已确认资料对应的单选，以及能唯一定位选项的常见自定义下拉。复杂联动下拉、只读日期控件、封闭 Shadow DOM、文件上传、协议复选、验证码和最终提交仍由你处理。插件不会为了填满表单编造资料，也不会自动新增行或翻页。此版本并不承诺所有网站都能一键完成；无法确认的控件会明确提示。</p>
       </section>
     </div>
   </AppShell>;

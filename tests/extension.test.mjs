@@ -4,6 +4,7 @@ import { buildExtensionCatalog } from '../lib/extension-catalog.ts';
 import { emptyProfile } from '../lib/product-types.ts';
 import { formatValue, mappingScope, matchField } from '../chrome-extension/field-model.js';
 import { readFile } from 'node:fs/promises';
+import { fillMissingResumeContacts, resumeContactFacts } from '../lib/resume-form-facts.ts';
 
 // node:test registration returns a promise; the test runner owns its lifecycle.
 /* oxlint-disable typescript/no-floating-promises */
@@ -78,4 +79,21 @@ test('extension uses user-triggered injections, no automatic submit or broad def
   assert.ok(!manifest.host_permissions.includes('<all_urls>'));
   const content = await readFile(new URL('../chrome-extension/content-script.js', import.meta.url), 'utf8');
   assert.ok(!/requestSubmit\(|\.submit\(/.test(content));
+});
+test('required Chinese labels and nested field names retain the right semantics', () => {
+  assert.equal(matchField(field('姓名（必填）'), fixture()).fact?.key, 'identity.name');
+  assert.equal(matchField(field('请输入电子邮箱'), fixture()).fact?.key, 'identity.email');
+  assert.equal(matchField(field('', {name:'education[1].school',context:'教育经历'}), fixture()).fact?.key, 'education.1.school');
+  assert.equal(matchField(field('姓名', {context:'基本信息'}), fixture()).fact?.key, 'identity.name');
+});
+test('empty profile contacts fall back only to explicit unambiguous resume facts', () => {
+  const resume = {headline:'测试人'};
+  const source = '测试人\n邮箱：candidate@fixture.invalid\n手机：13900000000';
+  assert.deepEqual(resumeContactFacts(resume, source), {name:'测试人', email:'candidate@fixture.invalid',phone:'13900000000'});
+  const profile = structuredClone(emptyProfile); profile.identity.email='confirmed@fixture.invalid';
+  const fallback = fillMissingResumeContacts(profile,resume,source);
+  assert.equal(fallback.profile.identity.email,'confirmed@fixture.invalid'); assert.equal(fallback.profile.identity.phone,'13900000000');
+  assert.equal(profile.identity.phone,''); assert.equal(fallback.profile.identity.gender,'');
+  assert.equal(resumeContactFacts({headline:'商业分析'},'商业分析\nfirst@fixture.invalid second@fixture.invalid').name,'');
+  assert.equal(resumeContactFacts(resume,'first@fixture.invalid second@fixture.invalid').email,'');
 });

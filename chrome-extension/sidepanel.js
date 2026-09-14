@@ -27,7 +27,7 @@ async function sync() {
   bundle = await send('sync', { jobId });
   $('job').replaceChildren(new Option('仅使用个人档案', ''), ...bundle.jobs.map(job => new Option(`${job.company} · ${job.role}`, job.id)));
   $('job').value = jobId;
-  $('sync-info').textContent = `已同步 ${bundle.facts.length} 项非空资料${bundle.resumeName ? ' · 简历：' + bundle.resumeName : ''} · ${new Date(bundle.updatedAt).toLocaleTimeString()}`;
+  $('sync-info').textContent = `已同步 ${bundle.facts.length} 项非空资料${bundle.resumeName ? ' · 简历：' + bundle.resumeName : ''} · ${new Date(bundle.updatedAt).toLocaleTimeString()}${bundle.missingSections?.length ? '。档案尚缺：' + bundle.missingSections.join('、') + '；对应字段不会编造填写，请在网站补充。' : ''}`;
   scan = null; $('fields').replaceChildren(); $('fill').disabled = true;
   status('资料已同步。选择本次岗位后，识别网申页面字段。');
 }
@@ -77,7 +77,7 @@ function renderFields() {
     const matched = matchField(field, bundle.facts, mapping);
     const container = document.createElement('div'); container.className = 'field';
     const title = document.createElement('strong'); title.textContent = field.label || field.name || '未命名字段';
-    const details = document.createElement('small'); details.textContent = [field.context, `第 ${field.recordIndex + 1} 项`, field.type, matched.reason, field.value ? '已有内容，默认保留' : ''].filter(Boolean).join(' · ');
+    const details = document.createElement('small'); details.textContent = [field.context, `第 ${field.recordIndex + 1} 项`, field.type, matched.reason, field.unsupported, field.value ? '已有内容，默认保留' : ''].filter(Boolean).join(' · ');
     const select = document.createElement('select'); select.setAttribute('aria-label', `为 ${title.textContent} 指定资料`);
     select.append(new Option('留空 / 暂不填写', ''), ...bundle.facts.map(fact => new Option(fact.label, fact.key)));
     select.value = matched.fact?.key || '';
@@ -87,6 +87,7 @@ function renderFields() {
       const fact = bundle.facts.find(item => item.key === select.value);
       const value = fact ? formatValue(field, fact.value) : '';
       preview.value = value === null ? '资料日期不够完整或格式不适用，留空；可回网站补充。' : value;
+      preview.title = fact ? `来源：${fact.source || '已同步资料'}` : '';
     };
     select.onchange = async () => {
       update(); mapping[field.fingerprint] = select.value;
@@ -103,7 +104,8 @@ $('scan').onclick = () => run($('scan'), async () => {
   scope = mappingScope(scan.url);
   const stored = await chrome.storage.local.get(scope); mapping = stored[scope] || {};
   renderFields(); $('results').replaceChildren();
-  status(`识别到 ${scan.fields.length} 个字段。检查对应关系后点击填写；不确定的字段默认留空。`);
+  const matched = decisions.filter(({ select }) => select.value).length;
+  status(`识别到 ${scan.fields.length} 个字段，已匹配 ${matched} 项资料，${scan.fields.length - matched} 项尚无对应资料。检查对应关系后点击填写。`, !matched);
 });
 $('forget').onclick = () => run($('forget'), async () => {
   if (!scope || !scan) throw new Error('请先识别当前页面。');
@@ -114,11 +116,12 @@ $('fill').onclick = () => run($('fill'), async () => {
   const fields = decisions.flatMap(({ field, select }) => {
     const fact = bundle.facts.find(item => item.key === select.value);
     const value = fact ? formatValue(field, fact.value) : null;
-    return value ? [{ ...field, value }] : [];
+    return value ? [{ ...field, value, factKey: fact.key }] : [];
   });
   if (!fields.length) throw new Error('没有可填写字段。请指定资料，或先回网站补充。');
   status('正在填写，不会点击提交…');
   const results = await send('fill', { tabId: scan.tabId, url: scan.url, fields, overwrite: $('overwrite').checked });
   $('results').replaceChildren(...results.map(result => { const p = document.createElement('p'); p.textContent = `${result.label}：${result.status}`; return p; }));
-  status(`已填写 ${results.filter(result => result.status === '已填写').length} / ${fields.length} 个所选字段。请在网页检查，并手动提交。`);
+  const filled = results.filter(result => result.status === '已填写').length;
+  status(filled ? `已填写 ${filled} / ${fields.length} 个所选字段。请检查网页中的实际结果；其余原因见下方。` : '没有字段成功写入。请查看下方逐项原因：已有内容会保留，无法确认的控件不会假装成功。', !filled);
 });
