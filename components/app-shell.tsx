@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Menu,
   Plus,
+  Puzzle,
   Settings,
   Target,
   UserRound,
@@ -26,6 +27,7 @@ const primaryNav = [
 const secondaryNav = [
   { href: '/profile', label: '个人档案', icon: UserRound },
   { href: '/settings', label: 'AI 设置', icon: Settings },
+  { href: '/browser-extension', label: '浏览器插件', icon: Puzzle },
 ];
 
 const desktopNav = [
@@ -35,6 +37,7 @@ const desktopNav = [
   secondaryNav[0],
   primaryNav[3],
   secondaryNav[1],
+  secondaryNav[2],
 ];
 
 function isActive(pathname: string, href: string) {

@@ -1,0 +1,15 @@
+# 秋招速投 Chrome 扩展
+
+加载本目录为已解压扩展。Manifest V3 / Chrome 116+，不需要安装 npm 依赖。
+
+保持网站已登录标签页打开，插件通过限定在本站的同源接口复用登录，不复制登录凭据。先同步个人档案，选择岗位，再到网申页面识别与填写。
+
+通用匹配：字段标签、ARIA、autocomplete、placeholder、name、所在教育/工作/项目分组，结合档案记录次序。重复行必须事先在网页添加；进入下一页重新识别。无法确定的字段默认空白，用户指定后按域名+路径+字段指纹在本机记住。未储存完整档案到本机持久存储。
+
+只在用户点击后采集/识别/填写。截图先本地预览，点击 AI 提取才发送网站；网页内容视作不可信资料。只授权当前网页，可额外授权嵌入表单域名。支持开放 Shadow DOM 和已授权 iframe。自定义下拉仅对 aria-controls/role=option 可精确确认的选项点击，其他自定义控件请手动处理。
+
+不会提交、翻页、接受协议、操作验证码、勾选单选/复选、上传文件或推断缺失事实。默认不覆盖现有内容。日期不得补造未知日；文本超过长度限制不截断。
+
+网站部署前运行 `node scripts/package-extension.mjs` 更新下载包。开发时可在扩展 storage.local 将 siteOrigin 设为 http://localhost:3000（仅此与正式站允许作为资料来源）。
+
+测试：`npm run test:extension` 检查语义匹配与模拟 AI 图片提取；`npm run test:extension:browser` 在独立临时 Chrome 配置中验证真实扩展、截图、同步、保存与填写，结束后清理该配置。浏览器测试需要 Playwright 和支持 Extensions 调试协议的新版 Chrome；可用 PLAYWRIGHT_MODULE / CHROME_PATH 指定安装位置，测试会占用本机 3000 端口。不会读取实际个人档案或投递真实岗位。

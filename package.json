@@ -6,6 +6,9 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "test:extension": "node --experimental-strip-types --import ./tests/register-typescript.mjs --test tests/extension.test.mjs tests/extension-ai.test.mjs",
+    "test:extension:browser": "node tests/extension-browser.mjs",
+    "extension:package": "node scripts/package-extension.mjs",
     "test:resume": "node --experimental-strip-types --import ./tests/register-typescript.mjs --test tests/resume-skills.test.mjs",
     "dev": "vinext dev",
     "build": "vinext build",

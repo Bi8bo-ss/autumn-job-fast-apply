@@ -19,6 +19,7 @@ const sections = [
   ['skills', '能力与资质'],
   ['summary', '自我评价'],
   ['preferences', '求职偏好'],
+  ['custom', '自定义网申字段'],
 ] as const;
 
 export function ProfileEditor({ initial }: { initial: Profile }) {
@@ -100,6 +101,7 @@ export function ProfileEditor({ initial }: { initial: Profile }) {
             <Field label="邮箱" value={identity.email} onChange={(value) => setIdentity('email', value)} />
             <Field label="手机" value={identity.phone} onChange={(value) => setIdentity('phone', value)} />
             <Field label="所在地" value={identity.location} onChange={(value) => setIdentity('location', value)} />
+            <Field label="性别（可选）" value={identity.gender} onChange={(value) => setIdentity('gender', value)} />
             <Field label="出生日期" value={identity.birthDate} type="date" onChange={(value) => setIdentity('birthDate', value)} />
             <Field label="身份证号（可选）" value={identity.idNumber} onChange={(value) => setIdentity('idNumber', value)} />
           </div>
@@ -150,6 +152,20 @@ export function ProfileEditor({ initial }: { initial: Profile }) {
             <Field label="到岗时间" value={profile.preferences.availability} onChange={(value) => setProfile((current) => ({ ...current, preferences: { ...current.preferences, availability: value } }))} />
             <Field label="期望薪资" value={profile.preferences.expectedSalary} onChange={(value) => setProfile((current) => ({ ...current, preferences: { ...current.preferences, expectedSalary: value } }))} />
           </div>
+        </Section>
+
+        <Section id="custom" title="自定义网申字段" description="把常用问答、国籍或工作许可等真实信息保存一次。标签尽量与网申问题一致；插件不会推测没有填写的信息。">
+          {profile.customFields.map((entry, index) => (
+            <div key={entry.id} className="mb-4 rounded-lg border p-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="字段名称 / 问题" value={entry.label} onChange={(value) => setProfile(current => ({ ...current, customFields: current.customFields.map((item, i) => i === index ? { ...item, label: value } : item) }))} />
+                <Field label="分组（可选）" value={entry.group} onChange={(value) => setProfile(current => ({ ...current, customFields: current.customFields.map((item, i) => i === index ? { ...item, group: value } : item) }))} />
+              </div>
+              <div className="mt-4"><ListField label="真实资料 / 已确认回答" value={entry.value} onChange={(value) => setProfile(current => ({ ...current, customFields: current.customFields.map((item, i) => i === index ? { ...item, value } : item) }))} /></div>
+              <DeleteButton label="自定义字段" onClick={() => confirmDelete('自定义字段', () => setProfile(current => ({ ...current, customFields: current.customFields.filter((_, i) => i !== index) })))} />
+            </div>
+          ))}
+          <Button type="button" variant="outline" onClick={() => setProfile(current => ({ ...current, customFields: [...current.customFields, { id: crypto.randomUUID(), label: '', group: '', value: '' }] }))}>添加网申字段</Button>
         </Section>
 
         {error ? <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><CircleAlert className="mr-2 inline size-4" />{error}</p> : null}
