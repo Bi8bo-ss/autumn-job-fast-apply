@@ -2,18 +2,20 @@ import { aiSettingsSchema } from '@/lib/product-types';
 import { requireApiUser } from '@/lib/server/auth';
 import { db, getProfile, id, now } from '@/lib/server/data';
 import { errorResponse, json, readJson } from '@/lib/server/http';
-import { getRuntimeEnv } from '@/lib/server/runtime';
+import { getOpenAiModels, getRuntimeEnv } from '@/lib/server/runtime';
 
 export async function GET() {
   try {
     const user = await requireApiUser();
     const profile = await getProfile(user.userId);
     const runtime = getRuntimeEnv();
+    const models = getOpenAiModels();
     return json({
       settings: profile.aiSettings,
       connection: {
         configured: Boolean(runtime.OPENAI_API_KEY),
-        model: runtime.OPENAI_MODEL || 'gpt-5.6-luna',
+        model: models.quality,
+        fastModel: models.fast,
         api: 'OpenAI Responses API',
         store: false,
       },

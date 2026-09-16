@@ -17,7 +17,7 @@ export function AiSettingsPanel({
   connection,
 }: {
   initial: AiSettings;
-  connection: { configured: boolean; model: string };
+  connection: { configured: boolean; model: string; fastModel: string };
 }) {
   const [settings, setSettings] = useState(initial);
   const [state, setState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -122,8 +122,11 @@ export function AiSettingsPanel({
 
         <aside className="space-y-4">
           <section className="workspace-panel p-5">
-            <h2 className="font-semibold">当前模型</h2>
-            <p className="mt-2 break-all text-sm text-muted-foreground">{connection.model}</p>
+            <h2 className="font-semibold">当前模型路由</h2>
+            <p className="mt-2 text-xs font-medium text-foreground">核心生成</p>
+            <p className="mt-1 break-all text-sm text-muted-foreground">{connection.model}</p>
+            <p className="mt-3 text-xs font-medium text-foreground">快速提取</p>
+            <p className="mt-1 break-all text-sm text-muted-foreground">{connection.fastModel}</p>
             <p className="mt-4 text-sm leading-6 text-[#58657a]">模型只接收完成当前任务所需的 JD、简历正文和必要事实。</p>
           </section>
 
