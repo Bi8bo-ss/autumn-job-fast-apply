@@ -16,6 +16,8 @@ await test('selects only the strongest facts from each experience and keeps the 
         '研究竞品功能与用户反馈，整理产品建议',
         '整理供应商合同与会议纪要',
         '组织团队团建活动',
+        '维护办公用品采购清单',
+        '协助安排访客接待',
       ],
     }],
   };
@@ -36,4 +38,12 @@ await test('selects only the strongest facts from each experience and keeps the 
 await test('does not force unrelated facts into a job match', () => {
   const matches = matchExperienceFacts({ experiences: [{ organization: '', title: '', highlights: ['整理供应商合同', '组织团队团建活动'] }] }, '负责用户增长数据分析与 SQL 看板', 5);
   assert.equal(matches.length, 0);
+});
+
+await test('keeps a multiline fact as one selectable fact', () => {
+  const fact = '使用 SQL 搭建增长漏斗周报\n推动 3 项改进，转化率提升 12%';
+  const matches = matchExperienceFacts({ experiences: [{ organization: '测试科技', title: '数据实习生', highlights: [fact] }] }, '负责使用 SQL 进行增长漏斗分析并提升转化率', 5);
+
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].fact, fact);
 });
