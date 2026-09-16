@@ -3,4 +3,24 @@ import { requireApiUser } from '@/lib/server/auth';
 import { db, getProfile, id, now } from '@/lib/server/data';
 import { errorResponse, json, readJson } from '@/lib/server/http';
 export async function GET() { try { const user = await requireApiUser(); return json({ profile: await getProfile(user.userId) }); } catch (error) { return errorResponse(error); } }
-export async function PUT(request: Request) { try { const user = await requireApiUser(); const parsed = profileSchema.safeParse(await readJson(request)); if (!parsed.success) return json({ error: parsed.error.issues[0]?.message || '档案格式有误。' }, { status: 400 }); const p = parsed.data; const values = [p.identity.name,p.identity.email,p.identity.phone,p.identity.location,p.education.length,p.experiences.length,p.projects.length,p.skills.length,p.summaries.zh || p.summaries.en,p.preferences.desiredRoles.length]; const completeness = Math.round(values.filter(Boolean).length / values.length * 100); const timestamp = now(); await db().prepare(`INSERT INTO profiles (id,user_id,content_json,completeness,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET content_json=excluded.content_json, completeness=excluded.completeness, updated_at=excluded.updated_at`).bind(id('profile'),user.userId,JSON.stringify(p),completeness,timestamp,timestamp).run(); return json({ ok: true, completeness }); } catch (error) { return errorResponse(error); } }
+export async function PUT(request: Request) {
+  try {
+    const user = await requireApiUser();
+    const parsed = profileSchema.safeParse(await readJson(request));
+    if (!parsed.success) return json({ error: parsed.error.issues[0]?.message || '档案格式有误。' }, { status: 400 });
+    const p = {
+      ...parsed.data,
+      experiences: parsed.data.experiences.map(cleanExperienceFacts),
+      projects: parsed.data.projects.map(cleanExperienceFacts),
+    };
+    const values = [p.identity.name,p.identity.email,p.identity.phone,p.identity.location,p.education.length,p.experiences.length,p.projects.length,p.skills.length,p.summaries.zh || p.summaries.en,p.preferences.desiredRoles.length];
+    const completeness = Math.round(values.filter(Boolean).length / values.length * 100);
+    const timestamp = now();
+    await db().prepare(`INSERT INTO profiles (id,user_id,content_json,completeness,created_at,updated_at) VALUES (?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET content_json=excluded.content_json, completeness=excluded.completeness, updated_at=excluded.updated_at`).bind(id('profile'),user.userId,JSON.stringify(p),completeness,timestamp,timestamp).run();
+    return json({ ok: true, completeness });
+  } catch (error) { return errorResponse(error); }
+}
+
+function cleanExperienceFacts<T extends { highlights: string[] }>(entry: T): T {
+  return { ...entry, highlights: entry.highlights.map((fact) => fact.trim()).filter(Boolean) };
+}

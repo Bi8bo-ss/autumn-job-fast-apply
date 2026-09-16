@@ -187,6 +187,14 @@ export type JobAnalysis = {
   keywords: string[];
   strengths: string[];
   gaps: string[];
+  matchedFacts?: Array<{
+    experienceIndex: number;
+    organization: string;
+    title: string;
+    fact: string;
+    score: number;
+    matchedTerms: string[];
+  }>;
 };
 
 export type TuneSuggestion = {

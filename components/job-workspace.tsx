@@ -923,8 +923,29 @@ function ExportReady({ version }: { version: { id: string; versionNumber: number
 }
 
 function Analysis({ analysis }: { analysis: JobAnalysis }) {
+  const matchedFacts = analysis.matchedFacts || [];
   return (
-    <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="space-y-6">
+      {matchedFacts.length ? (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 sm:p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div>
+              <h3 className="font-semibold text-emerald-950">事实库自动挑选</h3>
+              <p className="mt-1 text-sm leading-6 text-emerald-900">从每段实习 / 工作经历的全部事实中，按这个 JD 选出最相关的内容；未选中的事实不会被删除。</p>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-emerald-800">已选 {matchedFacts.length} 条</span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {matchedFacts.map((item, index) => (
+              <div key={`${item.experienceIndex}-${item.fact}-${index}`} className="rounded-lg border border-emerald-200 bg-white px-3.5 py-3">
+                <p className="text-xs font-semibold text-emerald-700">经历 {item.experienceIndex + 1} · {[item.organization, item.title].filter(Boolean).join(' · ') || '未命名经历'}</p>
+                <p className="mt-1 text-sm leading-6 text-[#354057]">{item.fact}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
       <div className="rounded-lg border bg-[#f5f8ff] p-5">
         <p className="text-sm text-muted-foreground">当前匹配度</p>
         <p className="mt-3 text-5xl font-semibold tracking-[-0.05em] text-primary">{analysis.score}<span className="ml-1 text-lg">%</span></p>
@@ -938,6 +959,7 @@ function Analysis({ analysis }: { analysis: JobAnalysis }) {
           <AnalysisList title="硬性要求" items={analysis.mustHave} />
           <AnalysisList title="关键词" items={analysis.keywords} />
         </div>
+      </div>
       </div>
     </div>
   );

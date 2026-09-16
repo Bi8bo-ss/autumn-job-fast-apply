@@ -24,6 +24,7 @@ import {
 } from '@/lib/resume-suggestions';
 import { getRuntimeEnv } from './runtime';
 import { removeExistingSkillNames, removesExistingSkills, skillNames } from '@/lib/resume-skills';
+import { matchExperienceFacts } from '@/lib/experience-matching';
 
 const jobAnalysisSchema = z.object({
   score: z.number().int().min(0).max(100),
@@ -46,6 +47,8 @@ const tuneOutputSchema = z.object({
       rationale: z.string(),
       matchedRequirement: z.string(),
       needsUserInput: z.boolean(),
+      factSource: z.enum(['resume', 'profile_fact']),
+      experienceIndex: z.number().int().min(0).nullable(),
     }),
   ),
 });
@@ -110,6 +113,8 @@ const JSON_SCHEMAS = {
             'rationale',
             'matchedRequirement',
             'needsUserInput',
+            'factSource',
+            'experienceIndex',
           ],
           properties: {
             operation: { type: 'string', enum: ['replace', 'append', 'delete', 'merge'] },
@@ -123,6 +128,8 @@ const JSON_SCHEMAS = {
             rationale: { type: 'string' },
             matchedRequirement: { type: 'string' },
             needsUserInput: { type: 'boolean' },
+            factSource: { type: 'string', enum: ['resume', 'profile_fact'] },
+            experienceIndex: { type: ['integer', 'null'], minimum: 0 },
           },
         },
       },
@@ -322,6 +329,13 @@ export async function tuneResumeWithAi({
   profile: Profile;
   settings: AiSettings;
 }) {
+  const matchedFacts = matchExperienceFacts(profile, jd);
+  const tunableFacts = matchedFacts
+    .map((item) => ({
+      ...item,
+      anchor: content.experiences[item.experienceIndex]?.bullets[0] || '',
+    }))
+    .filter((item) => item.anchor && !content.experiences[item.experienceIndex]?.bullets.includes(item.fact));
   const tuningInstructions = [
       '你是校园招聘简历定向编辑。目标是让简历明显向岗位靠拢，不限于同义词微调，但所有事实必须可靠。',
       '先在内部完成“岗位要求—候选人证据—内容主题”的聚类规划，再输出建议；禁止顺着原文逐条机械改写。每段经历最终只保留少数互不重复的核心主题，每条只讲清一条完整任务链。',
@@ -343,6 +357,9 @@ export async function tuneResumeWithAi({
       '硬性结构目标：任何单段实习/工作经历接受全部建议后不得超过 5 条，最相关的核心经历应为 4 至 5 条，其他经历通常为 3 至 4 条；每个项目通常保留 1 条完整要点，确有两个独立成果时最多 2 条。若原文超出上限，必须用 merge/delete 给出足够的收敛建议，否则答案不合格。',
       '核心经历建议按互不重叠的主题组织，例如业务规划、指标体系、经营洞察、效率自动化、跨部门落地；这是结构示意，不是固定标题。严禁把同一项目重复拆成“数据分析、业务洞察、趋势归因、跨域洞察”等多个相互覆盖的小点。',
       'operation=append 可用于 experience、project、skills 或 extras。用于 skills/extras 时 originalText 必须为空字符串；用于 experience/project 时，originalText 必须逐字引用目标经历或项目中的一条现有要点，作为定位锚点，新要点会添加到同一段经历或项目末尾。',
+      '岗位自动挑选的事实是候选人已经在事实库中确认过的内容，不是 JD 推测。对这些事实，如果它尚未出现在结构化简历中，应优先为每条直接相关事实生成一条 append 建议，把事实改写成完整的“短标题：任务—行动—工具—结果”要点；factSource 必须填 profile_fact，并填对应的 experienceIndex。不得把不同经历的事实混在一起。',
+      '每段经历最多自动带入 5 条岗位相关事实；如果原简历已有 2 条、事实库命中 5 条，只需补入能让最终内容达到 5 条以内的缺失事实。普通新增仍不超过两条，事实库命中追加不受这个普通新增上限影响。',
+      'profile_fact 的 originalText 必须逐字使用该段原简历中提供的 anchor；proposedText 必须明确包含对应事实的核心信息。若没有可定位的原简历经历，不要伪造定位，不要输出该追加。',
       '新增经历或项目要点只能整合该段经历本身及候选人事实库中明确支持的事实，绝不能把另一段经历的职责或成果挪过来，也不能仅凭 JD 新造行业经验。证据不足时不要新增；确实值得询问用户时才设置 needsUserInput=true。',
       'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把同一任务链的事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，不得把无关主题硬塞进同一点，也不得跨公司或跨项目合并。',
       'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题、项目标题和原始技能不能删除。',
@@ -357,7 +374,7 @@ export async function tuneResumeWithAi({
       '新增内容要克制：优先通过改写、合并和删除腾出篇幅；常规新增不超过两条，并确保最终仍适合一页简历。技能确认属于待用户回答的问题，可在常规新增之外最多输出三条。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
     ].join('\n');
-  const tuningInput = `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【候选人已确认事实（不含联系方式）】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}`;
+  const tuningInput = `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【岗位自动挑选的经历事实（每段最多 5 条）】\n${sanitizeForAi(JSON.stringify(tunableFacts))}\n\n【候选人已确认事实（不含联系方式）】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}`;
   const tuningSettings: AiSettings = { ...settings, writingStyle: 'detailed' };
   const result = await requestStructured(
     'resume_tuning',
@@ -372,12 +389,23 @@ export async function tuneResumeWithAi({
   const knownSkillEvidence = `${JSON.stringify(content)} ${confirmedFacts}`.toLowerCase().replace(/\s+/g, '');
   const validateSuggestions = (candidateResult: TuneOutput) => {
     let appendCount = 0;
+    const factAppendCounts = new Map<number, number>();
     let skillConfirmationCount = 0;
     const seen = new Set<string>();
     const claimedOriginals = new Set<string>();
     const suggestions = candidateResult.suggestions.filter((suggestion) => {
     const operation = suggestion.operation as ResumeSuggestionOperation;
     const section = suggestion.sectionKey as ResumeSuggestionSection;
+    const isFactAppend = operation === 'append' && suggestion.factSource === 'profile_fact';
+    if (isFactAppend) {
+      if (section !== 'experience' || suggestion.experienceIndex === null) return false;
+      const count = (factAppendCounts.get(suggestion.experienceIndex) || 0) + 1;
+      if (count > 5) return false;
+      const fact = tunableFacts.find((item) => item.experienceIndex === suggestion.experienceIndex
+        && suggestion.proposedText.replace(/\s+/g, '').includes(item.fact.replace(/\s+/g, '')));
+      if (!fact) return false;
+      factAppendCounts.set(suggestion.experienceIndex, count);
+    }
     const rawProposedText = suggestion.proposedText;
     let qualitySourceTexts: string[] = [];
     if (operation !== 'merge' && suggestion.mergedOriginalTexts.length) return false;
@@ -486,7 +514,7 @@ export async function tuneResumeWithAi({
         if (skillConfirmationCount > 3) return false;
       } else {
         appendCount += 1;
-        if (appendCount > 2) return false;
+        if (!isFactAppend && appendCount > 2) return false;
       }
     }
       return true;

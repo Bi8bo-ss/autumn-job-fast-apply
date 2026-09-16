@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useMemo, useState } from 'react';
-import { Check, CircleAlert, Save, ShieldCheck, Trash2 } from 'lucide-react';
+import { Check, CircleAlert, Plus, Save, ShieldCheck, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -211,6 +211,12 @@ function ExperienceSection({ title, entries, onChange, confirmDelete }: { title:
       <div className="divide-y rounded-lg border">
         {entries.map((entry, index) => {
           const update = <K extends keyof Experience>(key: K, value: Experience[K]) => onChange(entries.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
+          const factSlots = [...entry.highlights, ...Array.from({ length: Math.max(0, 3 - entry.highlights.length) }, () => '')];
+          const updateFact = (factIndex: number, value: string) => {
+            const next = factSlots.map((item, itemIndex) => itemIndex === factIndex ? value : item);
+            while (next.length && !next.at(-1)?.trim()) next.pop();
+            update('highlights', next);
+          };
           return (
             <div key={entry.id} className="p-4">
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -220,7 +226,26 @@ function ExperienceSection({ title, entries, onChange, confirmDelete }: { title:
                 <Field label="开始时间" type="month" value={entry.startDate} onChange={(value) => update('startDate', value)} />
                 <Field label="结束时间" type="month" value={entry.endDate} onChange={(value) => update('endDate', value)} />
               </div>
-              <div className="mt-4"><ListField label="事实亮点（每行一条）" rows={4} value={entry.highlights.join('\n')} onChange={(value) => update('highlights', value.split('\n').map((item) => item.trim()).filter(Boolean))} /></div>
+              <div className="mt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">事实库 · 已记录 {entry.highlights.length} 条</p>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">一件事实一个栏位，可以在同一个栏位里写多行；岗位匹配时会自动挑选最相关的 5 条。</p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" onClick={() => update('highlights', [...entry.highlights, ''])}><Plus />添加事实</Button>
+                </div>
+                <div className="mt-3 space-y-3">
+                  {factSlots.map((highlight, highlightIndex) => (
+                    <div key={`${entry.id}-fact-${highlightIndex}`} className="flex items-start gap-2 rounded-lg border bg-slate-50/55 p-3">
+                      <div className="min-w-0 flex-1">
+                        <ListField label={`事实 ${highlightIndex + 1}`} rows={3} value={highlight} onChange={(value) => updateFact(highlightIndex, value)} placeholder="写清场景、你的动作、使用的工具和实际结果；一件事实可以写多行。" />
+                      </div>
+                      {highlightIndex < entry.highlights.length ? <button type="button" aria-label={`删除事实 ${highlightIndex + 1}`} className="mt-7 grid size-10 shrink-0 place-items-center rounded-md text-destructive hover:bg-red-50" onClick={() => update('highlights', entry.highlights.filter((_, itemIndex) => itemIndex !== highlightIndex))}><Trash2 className="size-4" /></button> : null}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-muted-foreground">空栏不会保存成事实。尽量完整记录，不需要为了某一个岗位删减；未被当前 JD 选中的事实会继续保留，之后投递其他岗位时仍可复用。</p>
+              </div>
               <DeleteButton label={title} onClick={() => confirmDelete(title, () => onChange(entries.filter((_, itemIndex) => itemIndex !== index)))} />
             </div>
           );
