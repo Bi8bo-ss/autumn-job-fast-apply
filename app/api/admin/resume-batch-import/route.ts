@@ -28,10 +28,15 @@ export async function POST(request: Request) {
   if (!owner) return json({ error: '未找到现有商业分析基础简历。' }, { status: 409 });
 
   const form = await request.formData();
+  const requestedKey = form.get('key');
+  const selectedInputs = resumeInputs.filter((input) => input.key === requestedKey);
+  if (selectedInputs.length !== 1) {
+    return json({ error: '请选择一份允许导入的基础简历。' }, { status: 400 });
+  }
   const timestamp = now();
   const imported: Array<{ id: string; name: string; mode: 'created' | 'updated' }> = [];
 
-  for (const input of resumeInputs) {
+  for (const input of selectedInputs) {
     const file = form.get(`file-${input.key}`);
     const sourceText = form.get(`text-${input.key}`);
     if (!(file instanceof File) || file.type !== 'application/pdf') {
