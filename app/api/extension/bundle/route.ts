@@ -16,12 +16,16 @@ export async function GET(request: Request) {
     const packRow = jobId ? await db().prepare('SELECT id,content_json AS contentJson,resume_version_id AS resumeVersionId FROM application_packs WHERE user_id=? AND job_id=? ORDER BY updated_at DESC LIMIT 1').bind(user.userId, jobId).first<{ id: string; contentJson: string; resumeVersionId: string | null }>() : null;
     let versionRow = await db().prepare(jobId
       ? 'SELECT id FROM resume_versions WHERE user_id=? AND job_id=? ORDER BY created_at DESC LIMIT 1'
-      : 'SELECT id FROM resume_versions WHERE user_id=? AND job_id IS NULL AND parent_version_id IS NULL ORDER BY created_at DESC LIMIT 1')
+      : `SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id
+        WHERE rv.user_id=? AND rv.job_id IS NULL AND rv.parent_version_id IS NULL AND r.is_base=1
+        ORDER BY rv.created_at DESC LIMIT 1`)
       .bind(...(jobId ? [user.userId, jobId] : [user.userId])).first<{ id: string }>();
     if (!versionRow && jobId) versionRow = await db().prepare('SELECT resume_version_id AS id FROM tune_runs WHERE user_id=? AND job_id=? ORDER BY created_at DESC LIMIT 1').bind(user.userId, jobId).first<{ id: string }>();
     // A newly captured job may not have a tune run yet. Keep the latest original
     // resume's complete skills instead of dropping them when a job is selected.
-    if (!versionRow && jobId) versionRow = await db().prepare('SELECT id FROM resume_versions WHERE user_id=? AND job_id IS NULL AND parent_version_id IS NULL ORDER BY created_at DESC LIMIT 1').bind(user.userId).first<{ id: string }>();
+    if (!versionRow && jobId) versionRow = await db().prepare(`SELECT rv.id FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id
+      WHERE rv.user_id=? AND rv.job_id IS NULL AND rv.parent_version_id IS NULL AND r.is_base=1
+      ORDER BY rv.created_at DESC LIMIT 1`).bind(user.userId).first<{ id: string }>();
     const version = versionRow ? await getResumeVersion(user.userId, versionRow.id) : null;
     const parsed = version ? resumeContentSchema.safeParse(JSON.parse(version.contentJson)) : null;
     const resume = parsed?.success ? normalizeResumeContent(parsed.data, version?.sourceText || '') : null;

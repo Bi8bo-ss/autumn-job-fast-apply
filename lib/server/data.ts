@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import type { Profile, ResumeContent } from '@/lib/product-types';
 import { emptyProfile, profileSchema } from '@/lib/product-types';
-import { parseResumeText, resumeContentToText } from '@/lib/resume-parser';
+import { normalizeResumeContent, parseResumeText, resumeContentToText } from '@/lib/resume-parser';
 
 export type JobRecord = {
   id: string;
@@ -80,7 +80,7 @@ export async function listResumes(userId: string) {
   const result = await db()
     .prepare(`SELECT id, name, language, current_version_id AS currentVersionId, source_file_id AS sourceFileId,
       created_at AS createdAt, updated_at AS updatedAt
-      FROM resumes WHERE user_id = ? ORDER BY updated_at DESC`)
+      FROM resumes WHERE user_id = ? AND is_base = 1 ORDER BY updated_at DESC`)
     .bind(userId)
     .all<ResumeRecord>();
   return result.results;
@@ -141,7 +141,7 @@ export async function getOriginalResumeVersion(userId: string, requestedVersionI
 }
 
 export function contentFromText(text: string, language: 'zh' | 'en'): ResumeContent {
-  return parseResumeText(text, language);
+  return normalizeResumeContent(parseResumeText(text, language), text);
 }
 
 export function textFromContent(content: ResumeContent) {
@@ -156,7 +156,7 @@ export async function getJobWorkspace(userId: string, jobId: string) {
       rv.parent_version_id AS parentVersionId, rv.version_number AS versionNumber,
       rv.content_json AS contentJson, rv.source_text AS sourceText, rv.created_at AS createdAt,
       r.name AS resumeName, r.language FROM resume_versions rv JOIN resumes r ON r.id=rv.resume_id
-      WHERE rv.user_id=? AND (rv.job_id=? OR rv.job_id IS NULL) ORDER BY rv.created_at DESC`).bind(userId, jobId).all(),
+      WHERE rv.user_id=? AND (rv.job_id=? OR (rv.job_id IS NULL AND r.is_base=1)) ORDER BY rv.created_at DESC`).bind(userId, jobId).all(),
     db().prepare(`SELECT id,resume_version_id AS resumeVersionId,status,analysis_json AS analysisJson,created_at AS createdAt FROM tune_runs WHERE user_id=? AND job_id=? ORDER BY created_at DESC LIMIT 1`).bind(userId,jobId).first(),
     db().prepare(`SELECT id,resume_version_id AS resumeVersionId,content_json AS contentJson,created_at AS createdAt,updated_at AS updatedAt FROM application_packs WHERE user_id=? AND job_id=? ORDER BY updated_at DESC LIMIT 1`).bind(userId,jobId).first(),
   ]);

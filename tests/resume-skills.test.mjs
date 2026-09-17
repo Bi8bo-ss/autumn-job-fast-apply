@@ -194,6 +194,38 @@ await test('confirmed tools are merged into one existing software row without lo
   assert.deepEqual(applyResumeSuggestion(preview, 'append:skills', '', '工具技能：Excel、PPT、Tableau'), preview);
 });
 
+await test('new skills reuse a suitable existing heading before creating a new row', () => {
+  const content = {
+    ...normalized(),
+    skills: [
+      '策略与运营：业务策略分析、经营分析',
+      '数据分析：Python、SQL',
+      '数据与实验：指标体系搭建、A/B Test、ANOVA',
+      'Excel & BI：Excel、Looker Studio、Tableau',
+      '业务工具：BPMN、DFD、ERD、PRD、项目管理',
+      '语言：中文（母语）、英语（工作语言）',
+    ],
+  };
+  const preview = applyResumeSuggestion(content, 'append:skills', '', '研究与方法：Prompt 工程');
+  assert.equal(preview.skills.length, content.skills.length);
+  assert.ok(preview.skills.find((line) => line.startsWith('数据与实验：')).includes('Prompt 工程'));
+  assert.ok(!preview.skills.some((line) => line.startsWith('研究与方法：')));
+
+  const unmatched = applyResumeSuggestion(content, 'append:skills', '', '行业关注：新能源汽车');
+  assert.equal(unmatched.skills.length, content.skills.length + 1);
+  assert.ok(unmatched.skills.some((line) => line === '行业关注：新能源汽车'));
+});
+
+await test('inline entry date ranges stay complete and render in metadata', () => {
+  const input = `示例姓名\n实习经历\n京东 | 服务产品岗（策略运营方向）实习生 中国，北京 | 2026.05 - 2026.08\n- 业务策略：围绕项目梳理完整履约链路并输出策略判断。\nJobster.io | 数据分析实习生 加拿大，多伦多 | 2025.06 - 2025.08\n- 用户分析：开展用户分层并输出运营建议。`;
+  const parsed = normalizeResumeContent(parseResumeText(input, 'zh'), input);
+  assert.equal(parsed.experiences.length, 2);
+  assert.equal(parsed.experiences[0].heading, '京东 | 服务产品岗（策略运营方向）实习生 中国，北京');
+  assert.equal(parsed.experiences[0].meta, '2026.05 - 2026.08');
+  assert.equal(parsed.experiences[1].heading, 'Jobster.io | 数据分析实习生 加拿大，多伦多');
+  assert.equal(parsed.experiences[1].meta, '2025.06 - 2025.08');
+});
+
 await test('skill deduplication preserves identifier punctuation, case and parentheses', () => {
   const input = '工具：C++、C#、HTML/CSS、Excel（透视表，函数）、R';
   const merged = mergeResumeSkillLines([input, '工具：C++、Python'], 'zh');

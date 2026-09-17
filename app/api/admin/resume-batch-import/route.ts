@@ -23,11 +23,15 @@ export async function POST(request: Request) {
     return json({ error: 'Not found.' }, { status: 404 });
   }
 
-  const owner = await db().prepare(`SELECT user_id AS userId FROM resumes
-    WHERE name = '商业分析' AND is_base = 1 ORDER BY created_at ASC LIMIT 1`).first<{ userId: string }>();
-  if (!owner) return json({ error: '未找到现有商业分析基础简历。' }, { status: 409 });
-
   const form = await request.formData();
+  const owner = await db().prepare(`SELECT user_id AS userId FROM resumes
+    ORDER BY created_at ASC LIMIT 1`).first<{ userId: string }>();
+  if (!owner) return json({ error: '未找到现有简历所有者。' }, { status: 409 });
+  if (form.get('action') === 'archive-active') {
+    const archived = await db().prepare(`UPDATE resumes SET is_base = 0, updated_at = ?
+      WHERE user_id = ? AND is_base = 1`).bind(now(), owner.userId).run();
+    return json({ archived: archived.meta.changes });
+  }
   const requestedKey = form.get('key');
   const selectedInputs = resumeInputs.filter((input) => input.key === requestedKey);
   if (selectedInputs.length !== 1) {

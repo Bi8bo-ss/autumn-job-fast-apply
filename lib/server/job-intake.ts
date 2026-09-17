@@ -73,7 +73,7 @@ export async function matchResumeVersion(userId: string, jd: string, language: '
         AND original.job_id IS NULL AND original.parent_version_id IS NULL
       ORDER BY original.version_number ASC, original.created_at ASC LIMIT 1
     )
-    WHERE r.user_id = ?`).bind(userId).all<MatchedResume>();
+    WHERE r.user_id = ? AND r.is_base = 1`).bind(userId).all<MatchedResume>();
   if (!result.results.length) return null;
 
   const jdLower = jd.toLowerCase();

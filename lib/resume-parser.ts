@@ -155,10 +155,11 @@ function prepareLines(text: string) {
     .replace(/[\t\u00a0]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n');
 
-  // Older PDF imports stored an entire section on one line. Sentence and date
+  // Older PDF imports stored an entire section on one line. Sentence
   // boundaries give those records enough structure to render as an ATS resume.
+  // Keep date ranges intact; normalizeEntry extracts an inline range from an
+  // entry heading without splitting its ending year onto a second line.
   prepared = prepared.replace(/([。；;])\s+(?=[^\n])/g, '$1\n');
-  prepared = prepared.replace(/\s+(?=(?:19|20)\d{2}(?:[.\-/年]))/g, '\n');
 
   return prepared
     .split('\n')
@@ -227,9 +228,21 @@ function parseEntries(lines: string[]): ResumeContent['experiences'] {
       current = { heading: line, meta: '', bullets: [] };
       continue;
     }
-    if (DATE_RE.test(line) && !current.meta) {
+    if (DATE_RANGE_RE.test(line) && current.bullets.length) {
+      push();
+      current = { heading: line, meta: '', bullets: [] };
+    } else if (DATE_RE.test(line) && !current.meta) {
       current.meta = line;
-    } else if (wasBullet || line.length > 70 || /[。；;]$/.test(line)) {
+    } else if (wasBullet) {
+      current.bullets.push(cleanBodyLine(line));
+    } else if (current.bullets.length) {
+      const previous = current.bullets.at(-1) || '';
+      const continuation = cleanBodyLine(line);
+      const separator = /[\u3400-\u9fff]$/.test(previous) && /^[\u3400-\u9fff，。；：、！？）】]/.test(continuation)
+        ? ''
+        : ' ';
+      current.bullets[current.bullets.length - 1] = `${previous}${separator}${continuation}`;
+    } else if (line.length > 70 || /[。；;]$/.test(line)) {
       current.bullets.push(cleanBodyLine(line));
     } else if (current.bullets.length || current.meta) {
       push();
@@ -245,11 +258,18 @@ function parseEntries(lines: string[]): ResumeContent['experiences'] {
 function normalizeEntry(entry: ResumeContent['experiences'][number]) {
   let heading = cleanLine(entry.heading).replace(/[|｜]\s*$/, '').trim();
   const rawMeta = cleanLine(entry.meta);
+  const headingMatch = heading.match(DATE_RANGE_RE);
   const match = rawMeta.match(DATE_RANGE_RE);
   let meta = rawMeta;
   const recoveredBullets: string[] = [];
 
-  if (match && match.index !== undefined) {
+  if (headingMatch && headingMatch.index !== undefined) {
+    const before = cleanLine(heading.slice(0, headingMatch.index)).replace(/[|｜,，·\s]+$/, '');
+    const after = cleanLine(heading.slice(headingMatch.index + headingMatch[0].length)).replace(/^[|｜,，:：;；·\s]+/, '');
+    heading = before;
+    meta = headingMatch[0].replace(/\s*(?:--?|–|—|至|~)\s*/, ' - ');
+    if (after) recoveredBullets.push(after);
+  } else if (match && match.index !== undefined) {
     const before = cleanLine(rawMeta.slice(0, match.index)).replace(/[|｜,，·\s]+$/, '');
     const after = cleanLine(rawMeta.slice(match.index + match[0].length)).replace(/^[|｜,，:：;；·\s]+/, '');
     meta = match[0].replace(/\s*(?:--?|–|—|至|~)\s*/, ' - ');

@@ -1,7 +1,7 @@
 import type { ResumeContent } from '@/lib/product-types';
 import { isLikelySupplementalNoise, normalizeResumeSkillLine } from '@/lib/resume-parser';
 
-import { mergeResumeSkillLines, removesExistingSkills } from './resume-skills';
+import { mergeSkillSuggestionIntoExistingLines, removesExistingSkills } from './resume-skills';
 
 export type ResumeSuggestionOperation = 'replace' | 'append' | 'delete' | 'merge';
 export type ResumeSuggestionSection = 'summary' | 'experience' | 'project' | 'skills' | 'extras';
@@ -63,8 +63,9 @@ export function applyResumeSuggestion(
     if (target.section === 'skills' || target.section === 'extras') {
       if (isLikelySupplementalNoise(nextText, source.language)) return content;
       if (target.section === 'skills') {
-        // Apply exactly the user's confirmed tools, including Office skills.
-        content.skills = mergeResumeSkillLines([...content.skills, nextText], source.language);
+        // Reuse an existing category whenever it can summarize the confirmed
+        // skill. Only create a new row when no current title is suitable.
+        content.skills = mergeSkillSuggestionIntoExistingLines(content.skills, nextText, source.language);
       } else if (!content.extras.includes(nextText)) content.extras.push(nextText);
       return content;
     }

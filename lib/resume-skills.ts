@@ -45,6 +45,46 @@ function categoryKey(category: string) {
   return key;
 }
 
+function semanticCategoryFamily(category: string) {
+  const key = skillKey(category);
+  if (/语言|language/.test(key)) return 'language';
+  if (/实验|统计|研究|方法|experiment|statistic|research|method/.test(key)) return 'methods';
+  if (/工具|软件|excel|bi|tool|software|technology|technical/.test(key)) return 'tools';
+  if (/策略|运营|经营|strategy|operation/.test(key)) return 'operations';
+  if (/数据分析|dataanalysis|analytics/.test(key)) return 'data-analysis';
+  if (/业务|专业|能力|business|professional/.test(key)) return 'professional';
+  return '';
+}
+
+export function fitSkillSuggestionToExistingCategories(
+  proposedText: string,
+  existingLines: string[],
+  language: ResumeContent['language'],
+) {
+  const existingGroups = existingLines.flatMap(skillGroups);
+  const existingNames = new Set(existingLines.flatMap(skillNames));
+  return skillGroups(proposedText).flatMap(({ category, items }) => {
+    const remaining = items.filter((item) => !existingNames.has(skillKey(item)));
+    if (!remaining.length) return [];
+    const exact = existingGroups.find((group) => category && categoryKey(group.category) === categoryKey(category));
+    const family = semanticCategoryFamily(category);
+    const summarized = exact || (family
+      ? existingGroups.find((group) => semanticCategoryFamily(group.category) === family)
+      : undefined);
+    const resolvedCategory = summarized?.category || category;
+    return `${resolvedCategory ? `${resolvedCategory}${language === 'zh' ? '：' : ': '}` : ''}${remaining.join(language === 'zh' ? '、' : ', ')}`;
+  }).join(language === 'zh' ? '；' : '; ');
+}
+
+export function mergeSkillSuggestionIntoExistingLines(
+  existingLines: string[],
+  proposedText: string,
+  language: ResumeContent['language'],
+) {
+  const fitted = fitSkillSuggestionToExistingCategories(proposedText, existingLines, language);
+  return fitted ? mergeResumeSkillLines([...existingLines, fitted], language) : [...existingLines];
+}
+
 export function mergeResumeSkillLines(lines: string[], language: ResumeContent['language']) {
   const groups: SkillGroup[] = [];
   const categories = new Map<string, SkillGroup>();
