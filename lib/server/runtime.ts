@@ -8,6 +8,7 @@ export type RuntimeEnv = Cloudflare.Env & {
   SITE_URL?: string;
   APP_OWNER_USER_ID?: string;
   APP_OWNER_EMAIL?: string;
+  RESUME_IMPORT_TOKEN?: string;
 };
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-5.6-terra';
