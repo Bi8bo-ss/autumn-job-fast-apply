@@ -250,6 +250,63 @@ await test('new versions and repeated normalization retain the complete skill li
   }
 });
 
+await test('experience and project points cannot be deleted or merged', () => {
+  const content = {
+    ...normalized(),
+    experiences: [{
+      heading: '京东 | 服务产品岗',
+      meta: '2026.05 - 2026.08',
+      bullets: [
+        '履约规划：梳理品牌授权、物流能力及平台服务商链路。',
+        '机制分析：拆解资金流与分润机制并识别风险。',
+      ],
+    }],
+    projects: [{
+      heading: 'A/B Test 实验设计与统计分析项目',
+      meta: '2026.01 - 2026.02',
+      bullets: [
+        '实验设计：定义假设、指标与样本方案。',
+        '结果分析：完成显著性检验并输出建议。',
+      ],
+    }],
+  };
+
+  assert.deepEqual(
+    applyResumeSuggestion(content, 'delete:experience', content.experiences[0].bullets[0], ''),
+    content,
+  );
+  assert.deepEqual(
+    applyResumeSuggestion(
+      content,
+      'merge:experience',
+      JSON.stringify(content.experiences[0].bullets),
+      '履约策略：整合两项工作。',
+    ),
+    content,
+  );
+  assert.deepEqual(
+    applyResumeSuggestion(content, 'delete:project', content.projects[0].bullets[0], ''),
+    content,
+  );
+  assert.deepEqual(
+    applyResumeSuggestion(
+      content,
+      'merge:project',
+      JSON.stringify(content.projects[0].bullets),
+      '实验闭环：整合两项工作。',
+    ),
+    content,
+  );
+
+  const rewritten = applyResumeSuggestion(
+    content,
+    'experience',
+    content.experiences[0].bullets[0],
+    '履约规划：梳理品牌授权、物流能力及平台服务商链路，并补充策略结论。',
+  );
+  assert.equal(rewritten.experiences[0].bullets.length, content.experiences[0].bullets.length);
+});
+
 await test('actual workspace preview restores the source and follows draft, accept and skip states', () => {
   const damaged = original();
   damaged.skills = [originalLines[0], originalLines[2]];

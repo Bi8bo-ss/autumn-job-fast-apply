@@ -51,6 +51,16 @@ export function applyResumeSuggestion(
 ): ResumeContent {
   const content = structuredClone(source);
   const target = parseSuggestionSection(encodedSection);
+
+  // Experience and project bullets are source evidence. Keep every original
+  // point even when an older tuning run still contains a destructive action.
+  // Rewriting a point or appending supported detail is allowed; removing or
+  // merging points is intentionally a no-op.
+  if ((target.section === 'experience' || target.section === 'project')
+    && (target.operation === 'delete' || target.operation === 'merge')) {
+    return content;
+  }
+
   const nextText = normalizeSuggestedResumeText(
     target.section,
     target.operation === 'merge' ? '' : originalText,

@@ -342,10 +342,10 @@ export async function tuneResumeWithAi({
     .filter((item) => item.anchor && !content.experiences[item.experienceIndex]?.bullets.includes(item.fact));
   const tuningInstructions = [
       '你是校园招聘简历定向编辑。目标是让简历明显向岗位靠拢，不限于同义词微调，但所有事实必须可靠。',
-      '先在内部完成“岗位要求—候选人证据—内容主题”的聚类规划，再输出建议；禁止顺着原文逐条机械改写。每段经历最终只保留少数互不重复的核心主题，每条只讲清一条完整任务链。',
-      '逐条审阅结构化简历中的每一条经历和项目要点，并在保留、改写、合并、删除、新增之间做明确判断。不要为了凑数量改写已经清晰且高度相关的内容。',
-      '每条 replace 必须带来实质提升，至少做到以下一项：让职责更贴近 JD、前置可验证的岗位关键词、补强任务—行动—结果链路、合并重复信息、让工具与业务结果的联系更清楚。禁止只换同义词或机械塞关键词。',
-      '允许重组已有要点、合并冗余、调整要点顺序感，并在已有事实支持下强化任务—行动—结果链路。优先把与 JD 最相关且证据最强的内容放在建议正文前部。',
+      '先在内部完成“岗位要求—候选人证据—内容主题”的聚类规划，再输出建议；禁止顺着原文逐条机械改写。每条只讲清一条完整任务链，但必须保留经历和项目中的每一个原始要点。',
+      '逐条审阅结构化简历中的每一条经历和项目要点，并在保留、改写、新增之间做明确判断。不要为了凑数量改写已经清晰且高度相关的内容；不得通过删除或合并减少原始要点数量。',
+      '每条 replace 必须带来实质提升，至少做到以下一项：让职责更贴近 JD、前置可验证的岗位关键词、补强任务—行动—结果链路、精炼重复表述但保留全部事实、让工具与业务结果的联系更清楚。禁止只换同义词或机械塞关键词。',
+      '允许重写已有要点并在已有事实支持下强化任务—行动—结果链路。改写必须保留该要点中已有的职责、方法、工具、数字和成果，只能补充或更清楚地表达，不能为了贴合 JD 删去其中的事实。',
       '如果 JD 明确强调某个行业或方向，可以在 skills 或 extras 新增一条简短的“行业关注 / 求职方向 / 学习关注”定位语。例如“行业关注：新能源汽车、智能出行与用户运营”。这种话只能表达关注或求职意向，不能写成“熟悉、精通、有经验、负责过”。',
       '如果候选人事实库明确提供了证据，才可以新增更具体的技能或行业陈述。JD 中的要求本身绝不是候选人事实。',
       '禁止编造或夸大经历、职责、项目、技能、数字和成果；没有证据的“熟悉、精通、具备经验、负责过”等表述必须 needsUserInput=true，并明确提示用户补充。',
@@ -354,29 +354,29 @@ export async function tuneResumeWithAi({
       '每条经历与项目的 proposedText 都必须严格使用“短标题：正文”格式。中文短标题建议 3 至 6 个字，英文短标题建议 2 至 4 个词。标题必须准确概括正文正在解决的具体问题、方法或成果，不能只写宽泛能力。',
       '严禁使用“数据分析、业务分析、工作内容、主要职责、核心贡献、综合能力、项目经验、相关经验、工作成果、成果产出、方案搭建、项目推进”作为短标题；英文同样禁用 Analysis、Analytics、Impact、Experience、Responsibilities、Contribution、Delivery 等泛标题。',
       '标题与正文必须能直接互证。例如正文若主要讲送装履约模式、服务链路和成本分配，应写“履约规划”或“服务模式”，不能写“数据分析”；正文若主要讲指标口径、核算和监控，应写“指标体系”；正文若主要讲自动化和耗时下降，应写“效率优化”。不要照抄示例，应根据该条真正的主线命名。',
-      '冒号后的正文必须依次串起：业务场景或目标、候选人的关键动作、使用的方法或工具、对决策/运营/流程/用户/交付的结果。正文涉及多个动作时，它们必须服务同一个核心成果；不同主题必须拆开，重复或同链路碎片则必须合并。',
+      '冒号后的正文必须依次串起：业务场景或目标、候选人的关键动作、使用的方法或工具、对决策/运营/流程/用户/交付的结果。正文涉及多个动作时，它们必须服务同一个核心成果；不同主题保持为独立要点，不得因相似而合并或删除。',
       '可以重写原有短标题，使它更准确地表达该条与 JD 的连接；同一段经历不要使用重复或近义短标题。原简历中没有短标题或短标题失真的要点，只要被保留，就应通过 replace 修正。',
-      '禁止把一个完整成果拆成多个半句小点，也不要让一句只剩“搭建看板”“推进协同”“输出报告”这类动作。replace/append 的中文正文建议 72 至 140 字，merge 的中文正文建议 90 至 150 字；英文分别建议 28 至 58 词和 34 至 64 词，通常在简历中占 2 至 3 行。',
-      '优先保留并前置原文中的量化证据，例如时间、效率、覆盖率和产出数量；合并或改写时不得丢失任何仍相关的数字。没有数字时要明确写出对决策、运营、流程、用户或交付的实际影响，但绝不能虚构数字。',
-      '硬性结构目标：任何单段实习/工作经历接受全部建议后不得超过 5 条，最相关的核心经历应为 4 至 5 条，其他经历通常为 3 至 4 条；每个项目通常保留 1 条完整要点，确有两个独立成果时最多 2 条。若原文超出上限，必须用 merge/delete 给出足够的收敛建议，否则答案不合格。',
+      '禁止把一个完整成果拆成多个半句小点，也不要让一句只剩“搭建看板”“推进协同”“输出报告”这类动作。replace/append 的中文正文建议 72 至 140 字，英文建议 28 至 58 词，通常在简历中占 2 至 3 行。',
+      '必须保留原文中的量化证据，例如时间、效率、覆盖率和产出数量；改写时不得丢失任何已有数字、工具、职责或结果。没有数字时可更清楚地表达对决策、运营、流程、用户或交付的实际影响，但绝不能虚构数字。',
+      '结构保护：经历和项目原来有多少条要点，接受常规改写后至少仍保留多少条；禁止为了控制一页、提高相关性或减少重复而删除、合并任何原始要点。篇幅只能通过精炼每条表述来控制。',
       '核心经历建议按互不重叠的主题组织，例如业务规划、指标体系、经营洞察、效率自动化、跨部门落地；这是结构示意，不是固定标题。严禁把同一项目重复拆成“数据分析、业务洞察、趋势归因、跨域洞察”等多个相互覆盖的小点。',
       'operation=append 可用于 experience、project、skills 或 extras。用于 skills/extras 时 originalText 必须为空字符串；用于 experience/project 时，originalText 必须逐字引用目标经历或项目中的一条现有要点，作为定位锚点，新要点会添加到同一段经历或项目末尾。',
       '岗位自动挑选的事实是候选人已经在事实库中确认过的内容，不是 JD 推测。对这些事实，如果它尚未出现在结构化简历中，应优先为每条直接相关事实生成一条 append 建议，把事实改写成完整的“短标题：任务—行动—工具—结果”要点；factSource 必须填 profile_fact，并填对应的 experienceIndex。不得把不同经历的事实混在一起。',
-      '每段经历最多自动带入 5 条岗位相关事实；如果原简历已有 2 条、事实库命中 5 条，只需补入能让最终内容达到 5 条以内的缺失事实。普通新增仍不超过两条，事实库命中追加不受这个普通新增上限影响。',
+      '每段经历最多自动带入 5 条岗位相关事实。普通新增仍不超过两条，事实库命中追加不受这个普通新增上限影响；新增不能以删除或合并原有要点作为交换。',
       'profile_fact 的 originalText 必须逐字使用该段原简历中提供的 anchor；proposedText 必须明确包含对应事实的核心信息。若没有可定位的原简历经历，不要伪造定位，不要输出该追加。',
       '新增经历或项目要点只能整合该段经历本身及候选人事实库中明确支持的事实，绝不能把另一段经历的职责或成果挪过来，也不能仅凭 JD 新造行业经验。证据不足时不要新增；确实值得询问用户时才设置 needsUserInput=true。',
-      'operation=merge 只用于 experience 或 project。originalText 填第一条要合并的完整原文，mergedOriginalTexts 填同一段经历或项目中其余 1 至 4 条完整原文；proposedText 把同一任务链的事实合成一条更深入、更贴合 JD 的完整要点。不得遗漏有价值的数字、工具或结果，不得把无关主题硬塞进同一点，也不得跨公司或跨项目合并。',
-      'operation=delete 时，originalText 必须逐字引用一条完整的现有概述、经历要点、项目要点或其他信息，proposedText 必须为空字符串。仅删除与 JD 低相关、重复、空泛或挤占单页篇幅的内容；教育、姓名、经历标题、项目标题和原始技能不能删除。',
+      'experience 和 project 禁止使用 operation=merge；相似要点仍须分别保留，可各自通过 replace 提升表达。',
+      'experience 和 project 禁止使用 operation=delete。operation=delete 只可用于 summary 或 extras 中明确重复、无意义的解析残片，且 originalText 必须逐字引用完整现有文本、proposedText 必须为空字符串；教育、姓名、经历标题、项目标题和原始技能不能删除。',
       '其他信息 extras 可清理解析残片和无意义关键词堆叠。原始技能 skills 属于已确认事实，不能因为重复词、疑似解析残片或与 JD 低相关就删除技能或整行分类；无法确定的文字应向用户说明。新增或改写 skills/extras 时必须使用“类别：具体内容”格式，不能追加一行没有冒号的关键词。',
       '新增技能必须做两层判断：先检查现有技能标题能否概括该技能；能概括时必须沿用该标题并合并到现有行，只有所有现有标题都不适合时才允许新建一行。不要为了单个技能随意创造“研究与方法”“工具技能”等近义分类。',
       '完成常规改写规划后，再逐项核对 JD 明确要求的高价值命名技能、软件、平台、编程语言或分析方法。如果某项高价值技能（例如 Tableau）在原始简历和候选人已确认事实中都没有证据，但确认后能显著提高匹配度，必须追加一条“技能确认”建议：operation=append、sectionKey=skills、originalText=""、needsUserInput=true。proposedText 使用“类别：技能名”格式，只写待确认的真实技能名称，不得自行添加“精通、熟练”等程度；rationale 必须直接询问“岗位要求 X，但现有资料未体现，你是否确实会使用？”。最多询问 3 项，不要把同义技能重复提问。',
       'Excel、PPT/PowerPoint、Microsoft Office 与其他技能采用同样的事实规则：原版已有或用户确认的必须保留；不能仅凭 JD 自动加入，也不能仅因属于办公软件就删去。',
       '原始简历 skills 中已有的软件、工具、编程语言、语言能力和专业方法都必须保留，不得因 JD 未提到而删除或在改写中遗漏任何一项，包括招标书、项目管理、ERD 等。可以调整分类、排序和去除完全重复项；只有明确的解析乱码才可删除。',
-      '技能确认建议必须排在全部常规改写、合并、删除和新增建议之后。若原始简历或事实库已明确包含该技能，不得再次询问；若用户不确认，该技能不会进入简历。“技能确认”只允许作为界面状态，绝不能写进 proposedText 的类别或正文；应使用“工具技能”“研究与方法”“专业技能”等真实简历分类。',
-      '优先使用 merge 完成“多条碎片合成一条”，不要用多条 replace 制造更多要点。不得因为 JD 没提某项就机械删除；只有删除或合并后能明显提升岗位针对性、内容深度或信息密度时才建议。',
-      '除 merge 外，mergedOriginalTexts 必须为空数组。任何一个原始要点最多只能被一个 replace、merge 或 delete 建议使用，避免建议之间互相覆盖。',
+      '技能确认建议必须排在全部常规改写和新增建议之后。若原始简历或事实库已明确包含该技能，不得再次询问；若用户不确认，该技能不会进入简历。“技能确认”只允许作为界面状态，绝不能写进 proposedText 的类别或正文；应使用“工具技能”“研究与方法”“专业技能”等真实简历分类。',
+      '不得因为 JD 没提某项就机械删减。经历和项目只能逐条 replace 或追加有事实支持的新要点，不得用 merge/delete 收敛数量。',
+      'mergedOriginalTexts 必须始终为空数组。任何一个原始要点最多只能被一个 replace 建议使用，避免建议之间互相覆盖。',
       '不要输出、改写或引用邮箱、手机号、地址、证件号等联系方式，也不要把“已隐藏”占位符写入 proposedText。',
-      '新增内容要克制：优先通过改写、合并和删除腾出篇幅；常规新增不超过两条，并确保最终仍适合一页简历。技能确认属于待用户回答的问题，可在常规新增之外最多输出三条。',
+      '新增内容要克制：优先精炼和改写现有要点，常规新增不超过两条，并尽量保持一页简历；绝不能为了版面删除或合并经历、项目要点。技能确认属于待用户回答的问题，可在常规新增之外最多输出三条。',
       `建议控制在 ${settings.suggestionLimit} 条以内，优先高影响项。`,
     ].join('\n');
   const tuningInput = `【岗位描述】\n${sanitizeForAi(jd)}\n\n【结构化简历】\n${sanitizeForAi(JSON.stringify(content))}\n\n【岗位自动挑选的经历事实（每段最多 5 条）】\n${sanitizeForAi(JSON.stringify(tunableFacts))}\n\n【候选人已确认事实（不含联系方式）】\n${sanitizeForAi(JSON.stringify(tuningProfileFacts(profile)))}`;
@@ -401,6 +401,8 @@ export async function tuneResumeWithAi({
     const suggestions = candidateResult.suggestions.filter((suggestion) => {
     const operation = suggestion.operation as ResumeSuggestionOperation;
     const section = suggestion.sectionKey as ResumeSuggestionSection;
+    if ((section === 'experience' || section === 'project')
+      && (operation === 'delete' || operation === 'merge')) return false;
     const isFactAppend = operation === 'append' && suggestion.factSource === 'profile_fact';
     if (isFactAppend) {
       if (section !== 'experience' || suggestion.experienceIndex === null) return false;
@@ -711,12 +713,6 @@ function inspectResumeTuningPlan(content: ResumeContent, suggestions: TuneOutput
   const issues: string[] = [];
   let score = 0;
   projected.experiences.forEach((entry, index) => {
-    const excess = Math.max(0, entry.bullets.length - 5);
-    if (excess) {
-      issues.push(`第 ${index + 1} 段经历仍有 ${entry.bullets.length} 条，必须收敛至 5 条以内。`);
-      score += excess * 100;
-    }
-
     const misaligned = entry.bullets.filter((bullet) => !isResumeBulletLeadAligned(bullet, projected.language));
     if (misaligned.length) {
       issues.push(`第 ${index + 1} 段经历仍有 ${misaligned.length} 条泛标题、无标题或标题正文不匹配。`);
@@ -737,12 +733,7 @@ function inspectResumeTuningPlan(content: ResumeContent, suggestions: TuneOutput
     }
   });
 
-  projected.projects.forEach((entry, index) => {
-    const excess = Math.max(0, entry.bullets.length - 2);
-    if (excess) {
-      issues.push(`第 ${index + 1} 个项目仍有 ${entry.bullets.length} 条，必须收敛至 2 条以内。`);
-      score += excess * 80;
-    }
+  projected.projects.forEach((entry) => {
     const misaligned = entry.bullets.filter((bullet) => !isResumeBulletLeadAligned(bullet, projected.language));
     score += misaligned.length * 10;
   });
@@ -751,9 +742,8 @@ function inspectResumeTuningPlan(content: ResumeContent, suggestions: TuneOutput
     issues,
     score,
     needsRevision: Boolean(
-      projected.experiences.some((entry, index) => entry.bullets.length > 5
-        || (index === 0 && entry.bullets.some((bullet) => !isResumeBulletLeadAligned(bullet, projected.language))))
-      || projected.projects.some((entry) => entry.bullets.length > 2),
+      projected.experiences.some((entry, index) => index === 0
+        && entry.bullets.some((bullet) => !isResumeBulletLeadAligned(bullet, projected.language))),
     ),
   };
 }
