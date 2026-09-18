@@ -6,6 +6,7 @@ import { mergeResumeSkillLines, removesExistingSkills, removeExistingSkillNames,
 import { buildResumeHtml, buildResumeTex, packResumeDocument } from '../lib/resume-export.ts';
 import { buildResumePreviewContent } from '../lib/resume-preview.ts';
 import { textFromPdfItems } from '../lib/resume-pdf.ts';
+import { buildApplicationPackResumeFields } from '../lib/application-pack-materials.ts';
 
 // Transcribed skill content from the user's original screenshot; no identity data.
 const software = ['BigQuery', 'MySQL', 'SQL', 'Python', 'Looker Studio', 'Excel', 'Microsoft 办公', 'Power BI', 'R', 'HTML5', 'CSS'];
@@ -305,6 +306,62 @@ await test('experience and project points cannot be deleted or merged', () => {
     '履约规划：梳理品牌授权、物流能力及平台服务商链路，并补充策略结论。',
   );
   assert.equal(rewritten.experiences[0].bullets.length, content.experiences[0].bullets.length);
+});
+
+await test('application materials mirror every entry in the selected resume instead of expanding profile facts', () => {
+  const content = {
+    ...normalized(),
+    education: ['多伦多大学｜信息学硕士｜2025.09 - 2027.07'],
+    experiences: [
+      {
+        heading: '京东集团｜服务产品岗',
+        meta: '2026.05-2026.08',
+        bullets: ['履约规划：保留简历中的京东第一条。', '机制分析：保留简历中的京东第二条。'],
+      },
+      {
+        heading: 'Jobster.io｜数据分析实习生',
+        meta: '2025.06-2025.08',
+        bullets: ['用户分析：保留简历中的第二段经历。'],
+      },
+    ],
+    projects: [{
+      heading: 'A/B Test 项目',
+      meta: '2026.01-2026.02',
+      bullets: ['实验设计：保留简历中的项目。'],
+    }],
+    skills: ['数据分析：Python、SQL'],
+  };
+  const profile = {
+    identity: { name: '', email: '', phone: '', location: '', gender: '', birthDate: '', idNumber: '' },
+    education: [],
+    experiences: [{
+      id: 'jd-profile',
+      title: '服务产品岗',
+      organization: '京东集团',
+      startDate: '2026.05',
+      endDate: '2026.08',
+      location: '北京',
+      highlights: Array.from({ length: 10 }, (_, index) => `个人档案扩写内容 ${index + 1}`),
+    }],
+    projects: [],
+    skills: ['个人档案技能：不应覆盖简历'],
+    certificates: [],
+    awards: [],
+    languages: [],
+    summaries: { zh: '', en: '' },
+    preferences: { desiredRoles: [], desiredLocations: [], availability: '', expectedSalary: '' },
+    customFields: [],
+    aiSettings: { reasoningEffort: 'low', writingStyle: 'balanced', suggestionLimit: 10, outputLanguage: 'auto' },
+  };
+
+  const fields = buildApplicationPackResumeFields(profile, content, '岗位简历原文');
+  assert.equal(fields.experiences.source, '岗位简历原文');
+  assert.ok(fields.experiences.value.includes('京东集团｜服务产品岗'));
+  assert.ok(fields.experiences.value.includes('Jobster.io｜数据分析实习生'));
+  assert.ok(fields.experiences.value.includes('保留简历中的京东第一条'));
+  assert.ok(!fields.experiences.value.includes('个人档案扩写内容'));
+  assert.equal(fields.projects.value, 'A/B Test 项目｜2026.01-2026.02\n• 实验设计：保留简历中的项目。');
+  assert.equal(fields.skills.value, '数据分析：Python、SQL');
 });
 
 await test('actual workspace preview restores the source and follows draft, accept and skip states', () => {

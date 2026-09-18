@@ -2,9 +2,9 @@ import {
   resumeContentSchema,
   type ApplicationPackContent,
   type MaterialGroup,
-  type Profile,
   type ResumeContent,
 } from '@/lib/product-types';
+import { buildApplicationPackResumeFields } from '@/lib/application-pack-materials';
 import { normalizeResumeContent } from '@/lib/resume-parser';
 import { generateApplicationNarrativesWithAi } from '@/lib/server/ai';
 import { db, getJob, getProfile, id as makeId, now } from '@/lib/server/data';
@@ -28,7 +28,7 @@ export async function buildApplicationPack(userId: string, jobId: string) {
   if (!job) return null;
 
   const resume = parseResume(version);
-  const resumeSource = version?.jobId ? '岗位简历' : '基础简历';
+  const resumeSource = version?.jobId ? '岗位简历原文' : '基础简历原文';
   let selfEvaluation = '';
   let selfIntroduction = '';
   let motivation = '';
@@ -47,11 +47,7 @@ export async function buildApplicationPack(userId: string, jobId: string) {
   }
 
   const sourceText = version?.sourceText || '';
-  const profileEducation = formatProfileEducation(profile);
-  const profileExperiences = formatProfileEntries(profile.experiences);
-  const profileProjects = formatProfileEntries(profile.projects);
-  const resumeExperiences = formatResumeEntries(resume?.experiences || []);
-  const resumeProjects = formatResumeEntries(resume?.projects || []);
+  const resumeFields = buildApplicationPackResumeFields(profile, resume, resumeSource);
   const summary = job.language === 'zh' ? profile.summaries.zh : profile.summaries.en;
   const resumeSummary = resume?.summary && !containsContact(resume.summary) ? resume.summary : '';
   const field = (id: string, label: string, value: string, source: string) => {
@@ -75,10 +71,6 @@ export async function buildApplicationPack(userId: string, jobId: string) {
     profile.identity.phone,
     sourceText.match(/(?<!\d)(?:\+?86[- ]?)?1[3-9]\d{9}(?!\d)/)?.[0] || '',
   );
-  const education = prefer(profileEducation, resume?.education.join('\n') || '');
-  const experiences = prefer(profileExperiences, resumeExperiences);
-  const projects = prefer(profileProjects, resumeProjects);
-  const skills = prefer(profile.skills.join('，'), resume?.skills.join('\n') || '');
   const fallbackSelfEvaluation = prefer(summary, resumeSummary);
   const selfEvaluationSource = selfEvaluation ? `AI 基于${resume ? resumeSource : '事实档案'}与 JD 生成` : fallbackSelfEvaluation.source;
 
@@ -97,21 +89,21 @@ export async function buildApplicationPack(userId: string, jobId: string) {
     {
       id: 'education',
       title: '教育经历',
-      fields: [field('education', '教育经历', education.value, education.source)],
+      fields: [field('education', '教育经历', resumeFields.education.value, resumeFields.education.source)],
     },
     {
       id: 'experience',
       title: '经历与项目',
       fields: [
-        field('experiences', '实习/工作经历', experiences.value, experiences.source),
-        field('projects', '项目经历', projects.value, projects.source),
+        field('experiences', '实习/工作经历', resumeFields.experiences.value, resumeFields.experiences.source),
+        field('projects', '项目经历', resumeFields.projects.value, resumeFields.projects.source),
       ],
     },
     {
       id: 'skills',
       title: '技能与证书',
       fields: [
-        field('skills', '技能', skills.value, skills.source),
+        field('skills', '技能', resumeFields.skills.value, resumeFields.skills.source),
         field('certificates', '证书', profile.certificates.join('，'), '个人档案'),
         field('languages', '语言', profile.languages.join('，'), '个人档案'),
         field('extras', '其他信息', resume?.extras.join('\n') || '', resumeSource),
@@ -201,24 +193,6 @@ function parseResume(version: ResumeVersionRow | null): ResumeContent | null {
   } catch {
     return null;
   }
-}
-
-function formatResumeEntries(entries: ResumeContent['experiences']) {
-  return entries.map((entry) =>
-    `${entry.heading}${entry.meta ? `｜${entry.meta}` : ''}\n${entry.bullets.map((item) => `• ${item}`).join('\n')}`,
-  ).join('\n\n');
-}
-
-function formatProfileEntries(entries: Profile['experiences']) {
-  return entries.map((entry) =>
-    `${entry.organization}｜${entry.title}｜${entry.startDate}-${entry.endDate}\n${entry.highlights.map((item) => `• ${item}`).join('\n')}`,
-  ).join('\n\n');
-}
-
-function formatProfileEducation(profile: Profile) {
-  return profile.education.map((entry) =>
-    `${entry.school}｜${entry.degree}｜${entry.major}｜${entry.startDate}-${entry.endDate}`,
-  ).join('\n');
 }
 
 function containsContact(value: string) {

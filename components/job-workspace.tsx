@@ -336,7 +336,7 @@ export function JobWorkspace({
       {tab === 'pack' ? (
         <div className="space-y-4">
           <Panel title="官网填写材料包" action={<Button onClick={() => void call(`/api/jobs/${job.id}/application-pack`)} disabled={busy.includes('application-pack')}>{busy.includes('application-pack') ? '生成中…' : pack ? '从最新简历重新生成' : '从简历生成材料包'}</Button>}>
-            {pack ? <PackView pack={pack} /> : <Empty text="系统会读取该岗位最新简历，整理官网填写需要的个人信息、教育、经历、项目和技能。" />}
+            {pack ? <PackView pack={pack} /> : <Empty text="系统会逐字读取该岗位最新简历中的教育、全部经历、项目和技能，不会用个人档案扩写简历内容。" />}
           </Panel>
           {pack ? <CustomAnswer jobId={job.id} answers={data.answers || []} onDone={() => router.refresh()} /> : null}
         </div>
