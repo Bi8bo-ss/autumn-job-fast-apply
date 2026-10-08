@@ -1,6 +1,7 @@
 import { resumeContentSchema } from '@/lib/product-types';
 import { buildResumeHtml, buildResumeTex, packResumeDocument } from '@/lib/resume-export';
 import { normalizeResumeContent } from '@/lib/resume-parser';
+import { RESUME_PORTRAIT_PATH } from '@/lib/resume-portrait';
 import { requireApiUser } from '@/lib/server/auth';
 import { getResumeVersion } from '@/lib/server/data';
 import { errorResponse, json } from '@/lib/server/http';
@@ -14,7 +15,7 @@ async function loadPortrait(request: Request) {
     const headers = new Headers();
     const cookie = request.headers.get('cookie');
     if (cookie) headers.set('cookie', cookie);
-    const response = await fetch(new URL('/resume-portrait.jpg', request.url), { headers });
+    const response = await fetch(new URL(RESUME_PORTRAIT_PATH, request.url), { headers });
     return response.ok ? new Uint8Array(await response.arrayBuffer()) : null;
   } catch {
     return null;

@@ -34,6 +34,7 @@ import {
   type TuneSuggestion,
 } from '@/lib/product-types';
 import type { JobRecord } from '@/lib/server/data';
+import { RESUME_PORTRAIT_PATH } from '@/lib/resume-portrait';
 import { buildResumePreviewContent } from '@/lib/resume-preview';
 import { skillNames } from '@/lib/resume-skills';
 import { decodeMergeSourceTexts, normalizeSuggestedResumeText, parseSuggestionSection, resumeBulletParts } from '@/lib/resume-suggestions';
@@ -458,6 +459,7 @@ function MobileResumePreview({ content, resumeName, active, highlightText }: { c
 function ResumePreview({ content, resumeName, active, highlightText, embedded = false }: { content: ResumeContent | null; resumeName: string; active: boolean; highlightText: string; embedded?: boolean }) {
   const pageRef = useRef<HTMLDivElement>(null);
   const resumeRef = useRef<HTMLElement>(null);
+  const [portraitAvailable, setPortraitAvailable] = useState(true);
 
   useEffect(() => {
     const page = pageRef.current;
@@ -506,7 +508,7 @@ function ResumePreview({ content, resumeName, active, highlightText, embedded = 
         {content ? (
           <div ref={pageRef} className="mx-auto aspect-[210/297] w-full max-w-[760px] overflow-hidden bg-white shadow-[0_10px_26px_-14px_rgb(15_23_42_/_40%)]">
             <article ref={resumeRef} className="flow-root w-full origin-top-left bg-white px-[7.6%] py-[7.1%] font-['Microsoft_YaHei',Arial,sans-serif] text-black">
-            <Image src="/resume-portrait.jpg" alt="" width={195} height={294} className="float-right mb-2 ml-[5%] aspect-[195/294] w-[11.2%] object-cover" />
+            {portraitAvailable ? <Image src={RESUME_PORTRAIT_PATH} alt="" width={195} height={294} unoptimized onError={() => setPortraitAvailable(false)} className="float-right mb-2 ml-[5%] aspect-[195/294] w-[11.2%] object-cover" /> : null}
             <h1 className="break-words text-[24px] font-bold leading-none tracking-tight">{content.headline}</h1>
             {content.summary ? <p className={cn('mt-2 whitespace-pre-wrap break-words text-[11px] leading-[1.35]', isHighlighted(content.summary, highlightText) && 'rounded-r border-l-2 border-emerald-500 bg-emerald-100/80 px-1')} title={isHighlighted(content.summary, highlightText) ? '当前修改位置' : undefined}>{content.summary}</p> : null}
             <PreviewSection title={content.language === 'zh' ? '教育经历' : 'EDUCATION'} lines={content.education} highlightText={highlightText} />

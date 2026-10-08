@@ -1,11 +1,13 @@
 {
-  "name": "sites-project",
+  "name": "autumn-job-fast-apply",
   "version": "0.1.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "test": "node --experimental-strip-types --import ./tests/register-typescript.mjs --test \"tests/*.test.mjs\"",
+    "test:metrics": "node --experimental-strip-types --import ./tests/register-typescript.mjs --test tests/metrics.test.mjs",
     "test:extension": "node --experimental-strip-types --import ./tests/register-typescript.mjs --test tests/extension.test.mjs tests/extension-ai.test.mjs",
     "test:extension:browser": "node tests/extension-browser.mjs",
     "extension:package": "node scripts/package-extension.mjs",
